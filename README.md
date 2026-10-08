@@ -29,6 +29,9 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Mesetas con muelle: un muelle en la pista lanza a una meseta de 4 de altura, y una escalada lleva desde esa meseta a otra de 8. Son terreno sólido que sube de golpe, no plataformas colgantes.
 - Anillos (instancing), muelles, plataformas de una cara, plataformas móviles con engranajes, enemigos que se pisan o se destruyen rodando (con chispas), postes de control y meta.
 - Enemigos nuevos (modelos de Blender): **drones voladores** que ondulan sobre la pista (se pisan desde un salto o un picado), **torretas** que disparan al jugador que se acerca (los proyectiles hieren al tocarlos) y un **jefe final** al final del tercer acto de cada zona: aguanta tres golpes (rodar contra él o pisarlo), con invulnerabilidad breve tras cada golpe.
+- Enemigos: caminantes; **avispas** que ondulan y se lanzan en picado; **saltamontes** que dan saltos; **erizos** con púas (solo los destruye rodar o cargar); **peces** que saltan del agua; drones y torretas. El giro en el aire (un salto o un muelle) destruye a cualquiera que toque, salvo a los erizos.
+- Más desniveles para coger velocidad: **valles** (una bajada en rampa hasta un fondo con franja de aceleración y una subida) y **mesetas**. Bajar una pendiente acelera y subir frena un poco. La velocidad al salir de un muelle se limita a 24 para que la meseta siguiente se alcance.
+- Agua: **arroyos** y **lagunas** poco profundos por los que se chapotea (más despacio y salpicando), **cascadas** que bajan por el borde de una meseta hasta un estanque, y los huecos con agua con peces dentro.
 - Terreno de fondo continuo con la pista, por tramos, con colinas (verde), fábricas (industrial) o mar con islas (acuática).
 - Cordilleras de crestas con roca, estratos y nieve, con niebla atmosférica.
 - Decoración por acto: árboles redondos, pinos, matorrales con flores, tótems, setas y arcos (verde); edificios, grúas, tanques, tuberías y contenedores (industrial); palmeras, muelles, islas de arena y arcos (acuática).
@@ -41,7 +44,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Los tubos son planos (en el eje X-Y): no hay tubos que se crucen en profundidad.
 - La zona acuática no tiene bajadas: el agua llega hasta -3.4 (línea de muerte), así que no cabe una galería bajo la pista.
 - Sin raíles con cadenas colgantes ni sonido.
-- Los escenarios son geometría procedural de Three.js; solo los drones, las torretas y el jefe son modelos de Blender (`assets/models/*.glb`).
+- Los escenarios son geometría procedural de Three.js; solo los enemigos son modelos de Blender (`assets/models/*.glb`). No se usan texturas ni modelos de bibliotecas gratuitas (Poly Haven, ambientCG, Kenney, Quaternius): el entorno de desarrollo no tenía acceso a ellas.
 - Pendiente de probar en un móvil real: rendimiento y tamaño de la pantalla. Las pruebas automáticas se han hecho en Chromium headless con renderizado por software.
 
 ## Texturas
@@ -59,6 +62,7 @@ Las texturas de hierba, madera, ladrillo, suelo y agua son imágenes de muestra 
 - `js/backdrop.js`: fondo: terreno por tramos, cordilleras, decoración instanciada, nubes, agua y humo; colores por zona y acto.
 - `js/entities.js`: anillos y enemigos (instancias compartidas), postes, meta, muelles y plataformas móviles.
 - `js/fx.js`: chispas al destruir enemigos (partículas en una malla instanciada que se reciclan).
+- `js/water.js`: agua somera (vados, arroyos, lagunas y estanques) y cascadas, con olas y estrías animadas.
 - `js/models.js`: carga los modelos `.glb` de los enemigos nuevos (`assets/models/`); cada pieza se dibuja como malla instanciada.
 - `tools/blender/make_enemies.py`: crea esos modelos con Blender como módulo de Python (`pip install bpy`; `python tools/blender/make_enemies.py -- assets/models`).
 - `js/world.js`: construye el mundo de una fase en grupos por tramo y oculta los lejanos.

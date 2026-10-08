@@ -1,34 +1,40 @@
-// Física: jugador, sólidos AABB con rampas, tubos y reglas (anillos, enemigos, control, meta)
+// Física: jugador, sólidos AABB con rampas, tubos, agua poco profunda y reglas (anillos, enemigos, control, meta)
 import { input, isJumpHeld, readAxisX, readDown } from './input.js';
-import { slopeAt, pathAt } from './level.js';
-import { approach } from './util.js';
+import { slopeAt, pathAt, laneY } from './level.js';
+import { approach, clamp } from './util.js';
 
 export const STEP = 1 / 120;      // paso fijo de física (estable a cualquier FPS)
 export const LEVELS = 9;          // 3 zonas × 3 actos
 export const PW = 0.8, PH = 1.0;  // caja de colisión del jugador
 const GRAVITY = 42;
 const EPS = 0.01;
-const TOP_SPEED = 22, ACCEL = 16, FRICTION = 12, ROLL_FRICTION = 5;
+const TOP_SPEED = 22, ACCEL = 16, FRICTION = 12, ROLL_FRICTION = 5, OVER_DRAG = 5;
+const MAX_RUN = 38;               // velocidad máxima bajando pendientes
+const UPHILL = 0.5, DOWNHILL = 1.6; // la pendiente frena la mitad al subir y acelera un 60% más al bajar
+const WADE_MAX = 12;              // velocidad máxima chapoteando en agua poco profunda
+const SPLASH_T = 0.14;            // intervalo entre salpicaduras al correr por el agua
 const JUMP_V = 15.5, MAX_FALL = 48;
 const DASH_MIN = 14, DASH_RANGE = 14;
 const BOOST_V = 28;               // velocidad mínima sobre una franja de aceleración
 const ENEMY_R = 0.45, RING_R = 0.8, MAX_SCATTER = 60;
 const WALL_LIFT = 1.2;            // escalón que se sube al entrar de lado en una rampa
+const STEP_UP = 0.3;              // escalón bajo los pies que se sube sin frenar (la unión de una rampa con la pista)
 const MAX_SHOTS = 30;             // proyectiles de enemigos a la vez
+const SPRING_VX = 24;             // velocidad horizontal máxima al salir de un muelle (el vuelo cae donde lo espera la meseta)
 
 // Estado del jugador (se reinicia en cada fase)
 export const player = {
   x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1,
   grounded: false, groundSolid: null, jumping: false, spinAir: false,
   crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
-  path: null, s: 0, pv: 0,
+  path: null, s: 0, pv: 0, wet: false, splashT: 0,
 };
 
 // Estado de la partida; main.js fija onComplete y onGameOver
 export const G = {
   mode: 'title', lives: 3, score: 0, levelTime: 0, lv: null,
   checkpoint: { x: 0, y: 2 }, onComplete: null, onGameOver: null,
-  fx: [],                           // efectos pendientes (chispas): main.js los convierte en partículas
+  fx: [],                           // efectos pendientes (chispas, salpicaduras): main.js los convierte en partículas
 };
 
 const slopeMax = (s, p) => Math.max(slopeAt(s, p.x - PW / 2), slopeAt(s, p.x + PW / 2));
@@ -56,15 +62,71 @@ function aim(lv, sx, sy, speed, a) {
   lv.shots.push({ x: sx, y: sy, vx: Math.cos(t) * speed, vy: Math.sin(t) * speed, life: 4 });
 }
 
-// Movimiento de cada enemigo: patrulla; el dron ondula en el aire; la torreta y el jefe disparan al jugador
-function moveEnemy(e, lv, dt) {
-  const p = player;
-  e.inv = Math.max(0, (e.inv || 0) - dt);
-  if (e.type === 'fly') e.y = e.base + Math.sin(lv.t * 2.2 + e.phase) * 0.7;
-  e.x += e.dir * (e.speed ?? 2.2) * dt;
+// Patrulla entre minX y maxX; el enemigo mira hacia donde camina
+function patrol(e, speed, dt) {
+  e.x += e.dir * speed * dt;
   if (e.x < e.minX) { e.x = e.minX; e.dir = 1; }
   if (e.x > e.maxX) { e.x = e.maxX; e.dir = -1; }
-  if (e.type !== 'shoot' && e.type !== 'boss') return;
+  e.face = e.dir;
+}
+
+// Avispa: vuela de un lado a otro ondulando; de vez en cuando se lanza en picado al punto donde estaba el jugador
+function wasp(e, lv, dt) {
+  const p = player;
+  if (e.mode === 'dive') {
+    const dx = e.tx - e.x, dy = e.ty - e.y, L = Math.hypot(dx, dy) || 1;
+    e.x += dx / L * 17 * dt; e.y += dy / L * 17 * dt;
+    e.face = dx < 0 ? -1 : 1;
+    e.diveT -= dt;
+    if (L < 0.4 || e.diveT <= 0) e.mode = 'back';
+    return;
+  }
+  if (e.mode === 'back') {                         // vuelve a su altura de vuelo
+    const dy = e.base - e.y;
+    e.y += Math.sign(dy) * Math.min(Math.abs(dy), 7 * dt);
+    e.x += e.dir * 3 * dt;
+    e.face = e.dir;
+    if (Math.abs(dy) < 0.05) e.mode = 'patrol';
+    return;
+  }
+  patrol(e, 3.2, dt);
+  e.y = e.base + Math.sin(lv.t * 3 + e.phase) * 0.5;
+  e.cd -= dt;
+  if (e.cd <= 0 && Math.abs(p.x - e.x) < 9 && p.y < e.y + 1.5 && p.y > e.y - 6) {
+    e.mode = 'dive'; e.tx = p.x; e.ty = p.y + 0.5; e.diveT = 1.3; e.cd = 3.2;
+  }
+}
+
+// Saltamontes: camina despacio y de vez en cuando da un salto por la pista
+function hop(e, lv, dt) {
+  if (e.air) {
+    e.yv -= GRAVITY * dt;
+    e.y += e.yv * dt;
+    e.x = clamp(e.x + e.hv * dt, e.minX, e.maxX);
+    const g = laneY(lv.solids, e.x);
+    if (e.yv < 0 && e.y <= g) { e.y = g; e.air = false; e.yv = 0; e.hv = 0; e.cd = 1.6; }
+    return;
+  }
+  patrol(e, 1.0, dt);
+  e.cd -= dt;
+  if (e.cd <= 0) { e.air = true; e.yv = 12; e.hv = e.dir * 3.2; }
+}
+
+// Pez saltarín: se esconde bajo el agua y de vez en cuando salta hasta fuera
+function fish(e, dt) {
+  if (e.leap) {
+    e.yv -= GRAVITY * dt;
+    e.y += e.yv * dt;
+    if (e.y <= e.base) { e.y = e.base; e.leap = false; e.cd = e.gap; }
+  } else {
+    e.cd -= dt;
+    if (e.cd <= 0) { e.leap = true; e.yv = 15.5; }
+  }
+}
+
+// Torreta y jefe: disparan al jugador cuando está a su alcance
+function fire(e, lv, dt) {
+  const p = player;
   e.cd -= dt;
   e.face = p.x > e.x ? 1 : -1;                     // se gira hacia el jugador (no cambia la patrulla)
   const range = e.type === 'boss' ? 30 : 13;
@@ -78,13 +140,27 @@ function moveEnemy(e, lv, dt) {
   }
 }
 
+// Movimiento de cada tipo de enemigo
+function moveEnemy(e, lv, dt) {
+  e.inv = Math.max(0, (e.inv || 0) - dt);
+  switch (e.type) {
+    case 'fly': e.y = e.base + Math.sin(lv.t * 2.2 + e.phase) * 0.7; patrol(e, e.speed, dt); break;
+    case 'wasp': wasp(e, lv, dt); break;
+    case 'hop': hop(e, lv, dt); break;
+    case 'fish': fish(e, dt); break;
+    case 'shoot': patrol(e, 0, dt); fire(e, lv, dt); break;
+    case 'boss': patrol(e, e.speed, dt); fire(e, lv, dt); break;
+    default: patrol(e, e.speed ?? 2.2, dt);        // caminantes y erizos
+  }
+}
+
 function resolveX(p, solids, prevX) {
   const top = p.y + PH / 2, bottom = p.y - PH / 2;
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
     // Una cara o solo techo no bloquean de lado; pinchos y agua no son sólidos (hacen daño o matan en stepWorld)
     if (s.kind === 'platform' || s.kind === 'ceiling' || s.kind === 'spikes' || s.kind === 'water') continue;
-    if (top <= s.y0 + EPS || bottom >= s.y1 - EPS) continue;
+    if (top <= s.y0 + EPS || bottom >= s.y1 - STEP_UP) continue;
     if (right <= s.x0 || left >= s.x1) continue;
     if (s.kind === 'slope') {
       // Una pared muy empinada detiene al jugador; un escalón de hasta WALL_LIFT se sube
@@ -109,6 +185,8 @@ function resolveY(p, solids, prevBottom) {
       const bottom = p.y - PH / 2;
       if (p.vy <= 0.5 && bottom < s.y1 + 0.02 && bottom > s.y0 - 0.25) {
         p.y = s.y1 + PH / 2; p.vy = s.power; p.grounded = false; p.groundSolid = null; p.jumping = false;
+        p.vx = clamp(p.vx, -SPRING_VX, SPRING_VX);
+        p.spinAir = true;                       // el vuelo es un salto: el giro en el aire también destruye
         s.squash = 0.15;
       }
       continue;
@@ -125,7 +203,7 @@ function resolveY(p, solids, prevBottom) {
     const reach = slope ? 0.3 : 0;
     // Aterriza sólo si los pies estaban por encima de la superficie en el paso anterior;
     // en rampas también sube al jugador si ha entrado de lado por debajo de la superficie
-    const inside = slope && p.vy <= 0 && bottom < surf && bottom > surf - 1.2;
+    const inside = p.vy <= 0 && bottom < surf && bottom > surf - (slope ? 1.2 : STEP_UP);
     if ((p.vy <= 0 && prevBottom >= surf - tol && bottom < surf + reach) || inside) {
       p.y = surf + PH / 2;
       p.vy = 0; p.grounded = true; p.groundSolid = s;
@@ -187,18 +265,26 @@ function stepPlayer(dt) {
   p.rolling = p.grounded && (p.dashT > 0 || (down && Math.abs(p.vx) > 4));
   if (p.rolling) p.roll += p.vx * dt / 0.5;
 
-  // Velocidad horizontal con momentum
+  // Velocidad horizontal con momentum: sobre la velocidad de carrera (bajadas) se pierde despacio
   if (p.grounded) {
     if (p.crouch) p.vx = approach(p.vx, 0, 30 * dt);
     else if (Math.abs(ax) > 0.1) {
       const reversing = Math.sign(ax) !== Math.sign(p.vx) && Math.abs(p.vx) > 1;
-      p.vx = approach(p.vx, ax * TOP_SPEED, (reversing ? ACCEL * 2.5 : ACCEL) * dt);
+      if (!reversing && Math.abs(p.vx) > TOP_SPEED) p.vx = approach(p.vx, Math.sign(p.vx) * TOP_SPEED, OVER_DRAG * dt);
+      else p.vx = approach(p.vx, ax * TOP_SPEED, (reversing ? ACCEL * 2.5 : ACCEL) * dt);
     } else {
       p.vx = approach(p.vx, 0, (p.rolling ? ROLL_FRICTION : FRICTION) * dt);
     }
-  } else if (Math.abs(ax) > 0.1) {
+    // Pendientes: la gravedad acelera al bajar y frena (menos) al subir
+    const s = p.groundSolid;
+    if (!p.crouch && s && s.kind === 'slope') {
+      const g = (s.yb - s.ya) / (s.x1 - s.x0);
+      p.vx -= GRAVITY * g * (g > 0 ? UPHILL : DOWNHILL) / (1 + g * g) * dt;
+    }
+  } else if (Math.abs(ax) > 0.1 && (Math.abs(p.vx) <= TOP_SPEED || Math.sign(p.vx) !== Math.sign(ax))) {
     p.vx = approach(p.vx, ax * TOP_SPEED, 9 * dt);
   }
+  p.vx = clamp(p.vx, -MAX_RUN, MAX_RUN);
 
   // Gravedad (en suelo mantiene vy ligeramente negativa para detectar apoyo)
   if (p.grounded) p.vy = -GRAVITY * dt;
@@ -216,6 +302,15 @@ function stepPlayer(dt) {
   if (p.grounded && p.groundSolid && p.groundSolid.boost && (p.vx > 0 || ax > 0.1)) {
     p.vx = Math.max(p.vx, BOOST_V);
   }
+  // Agua poco profunda (vados, arroyos y estanques): se chapotea más despacio y salpica al entrar y al correr
+  const wade = !!(p.grounded && p.groundSolid && p.groundSolid.wade);
+  if (wade) {
+    p.vx = clamp(p.vx, -WADE_MAX, WADE_MAX);
+    p.splashT -= dt;
+    if (!p.wet) G.fx.push({ x: p.x, y: p.groundSolid.wl, n: 12, pal: 1 });
+    else if (p.splashT <= 0 && Math.abs(p.vx) > 5) { G.fx.push({ x: p.x, y: p.groundSolid.wl, n: 3, pal: 1 }); p.splashT = SPLASH_T; }
+  }
+  p.wet = wade;
   // Entrada a un tubo al cruzar su base hacia la derecha: sobre la pista, o bajo en la boca de una subida de galería
   // (el techo de la galería corta los saltos, así que un salto sobre la boca no deja al jugador en el vacío)
   if (p.vx > 0) {
@@ -255,6 +350,7 @@ export function die() {
   p.x = cp.x; p.y = cp.y + 1;
   p.vx = 0; p.vy = 0; p.rings = 0; p.invT = 1.5;
   p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0; p.spinAir = false; p.path = null;
+  p.wet = false;
 }
 
 // Un paso fijo: móviles, jugador, enemigos, anillos, puntos de control, caída y meta
@@ -288,22 +384,31 @@ export function stepWorld(dt) {
     }
   }
 
-  // Enemigos: destruidos al rodar, pisoteados o te hieren
+  // Enemigos: destruidos al rodar, al girar en el aire o al pisarlos; te hieren si los tocas de otro modo
   for (const e of lv.enemies) {
     if (!e.alive) continue;
     moveEnemy(e, lv, dt);
+    if (e.type === 'fish' && !e.leap) continue;          // el pez escondido bajo el agua no toca
     const r = e.r || ENEMY_R, ey = e.y + r;
     const dx = e.x - p.x, dy = ey - p.y;
-    if (dx * dx + dy * dy < (r + 0.4) ** 2) {
-      if (p.vy < 0 && p.y - PH / 2 > ey) {          // pisotón: rebota (un jefe solo recibe un golpe por vez)
-        if (!(e.inv > 0)) hitEnemy(e, ey);
-        p.vy = 10; p.grounded = false; p.groundSolid = null;
-      } else if ((p.rolling || p.dashT > 0) && !(e.inv > 0)) {   // rodando: destruye
-        hitEnemy(e, ey);
-      } else {
-        hurt();
-        if (G.mode !== 'play') return;
-      }
+    if (dx * dx + dy * dy >= (r + 0.4) ** 2) continue;
+    const stomp = p.vy < 0 && p.y - PH / 2 > ey;          // cae sobre él
+    const roll = p.rolling || p.dashT > 0;                // rueda o carga
+    const spin = p.spinAir && !p.grounded;                // gira en el aire (un salto o un muelle)
+    if (e.spiky) {                                        // erizo: solo lo destruye rodar o cargar
+      if (roll && !(e.inv > 0)) hitEnemy(e, ey);
+      else { hurt(); if (G.mode !== 'play') return; }
+      continue;
+    }
+    const hit = stomp || roll || spin;
+    // Un jefe recién golpeado solo rebota al jugador al pisarlo; cualquier otro contacto hace daño
+    if (hit && (!(e.inv > 0) || stomp)) {
+      if (!(e.inv > 0)) hitEnemy(e, ey);
+      if (stomp) { p.vy = 10; p.grounded = false; p.groundSolid = null; }
+      else if (!p.grounded) p.vy = Math.max(p.vy, 7);    // el giro en el aire rebota un poco
+    } else {
+      hurt();
+      if (G.mode !== 'play') return;
     }
   }
   // Disparos: vuelan en línea recta y hieren al jugador al tocarlos

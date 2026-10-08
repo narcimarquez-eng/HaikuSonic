@@ -5,6 +5,7 @@ import { zoneTextures } from './textures.js';
 import { buildLane, buildTube } from './lane.js';
 import { buildBackdrop, updateBackdrop } from './backdrop.js';
 import { buildEntities, updateEntities } from './entities.js';
+import { buildWater, updateWater } from './water.js';
 
 // Construye la pista, los tubos, el fondo y las entidades de la fase y los añade a la escena
 export function buildWorld(lv, zi, ai, scene) {
@@ -26,7 +27,8 @@ export function buildWorld(lv, zi, ai, scene) {
   for (const pt of lv.paths) buildTube(pt, T, chunkOf(pt.x0), zi);
   const bd = buildBackdrop(lv, zi, ai, T, chunkOf, root);
   const ent = buildEntities(lv, zi, chunkOf, root);
-  return { scene, root, chunks, bd, ent };
+  const water = buildWater(lv, chunkOf);
+  return { scene, root, chunks, bd, ent, water };
 }
 
 // Muestra los tramos cercanos al jugador (la ventana es amplia porque el fondo se ve lejos)
@@ -34,6 +36,7 @@ export function updateWorld(W, lv, t, dt, px) {
   for (const g of W.chunks.values()) g.visible = g.userData.x1 > px - 300 && g.userData.x0 < px + 320;
   updateBackdrop(W.bd, t, dt);
   updateEntities(W.ent, lv, t, dt);
+  updateWater(W.water, t, dt);
 }
 
 // Libera geometrías y materiales de la fase (las texturas compartidas se conservan)

@@ -16,20 +16,20 @@ const WALL = 8.5;             // distancia del muelle al muro de una meseta: a v
 // spike: pinchos con muelle que lanza sobre una meseta (en verde e industrial, a veces con galería bajo los pinchos)
 // water: un hueco con agua, con muelle y meseta. lift: muelle y meseta de 4. climb: dos mesetas (4 y 8)
 const PROFILE = [
-  [ // Verde: tramos, bucles, bajadas, pinchos, charcos y mesetas
-    { len: 900, enemies: 0.45, fly: 0.30, shoot: 0.25, w: { run: 34, hills: 16, gap: 9, boost: 7, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
-    { len: 1050, enemies: 0.55, fly: 0.40, shoot: 0.35, w: { run: 26, hills: 12, gap: 8, boost: 7, loop: 11, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
-    { len: 1200, enemies: 0.65, fly: 0.50, shoot: 0.45, w: { run: 20, hills: 9, gap: 7, boost: 6, loop: 14, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
+  [ // Verde: tramos, bucles, valles, arroyos, cascadas, pinchos, charcos, mesetas, avispas y erizos
+    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { run: 30, hills: 14, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
+    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { run: 22, hills: 10, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
+    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { run: 18, hills: 8, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
   ],
-  [ // Industrial: cintas, huecos, pinchos, mesetas y mantenimiento subterráneo
-    { len: 950, enemies: 0.5, fly: 0.25, shoot: 0.35, w: { run: 30, hills: 4, gap: 14, boost: 8, loop: 6, gallery: 6, spike: 9, lift: 8, climb: 5 } },
-    { len: 1100, enemies: 0.6, fly: 0.30, shoot: 0.45, w: { run: 24, hills: 4, gap: 16, boost: 7, loop: 10, gallery: 7, spike: 11, lift: 9, climb: 7 } },
-    { len: 1250, enemies: 0.7, fly: 0.35, shoot: 0.55, w: { run: 18, hills: 4, gap: 18, boost: 6, loop: 12, gallery: 8, spike: 13, lift: 10, climb: 8 } },
+  [ // Industrial: cintas, huecos, valles, arroyos, pinchos, mesetas, torretas y erizos
+    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { run: 26, hills: 4, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, gallery: 6, spike: 9, lift: 8, climb: 5 } },
+    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { run: 20, hills: 4, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, gallery: 7, spike: 11, lift: 9, climb: 7 } },
+    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { run: 16, hills: 4, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, gallery: 8, spike: 13, lift: 10, climb: 8 } },
   ],
-  [ // Acuática: balsas, bucles, pinchos de coral, agua y mesetas
-    { len: 1000, enemies: 0.5, fly: 0.45, shoot: 0.20, w: { run: 24, hills: 10, gap: 16, boost: 5, loop: 8, spike: 7, water: 9, lift: 6, climb: 4 } },
-    { len: 1150, enemies: 0.6, fly: 0.50, shoot: 0.30, w: { run: 20, hills: 10, gap: 16, boost: 5, loop: 10, spike: 8, water: 11, lift: 7, climb: 5 } },
-    { len: 1300, enemies: 0.7, fly: 0.55, shoot: 0.35, w: { run: 16, hills: 8, gap: 16, boost: 5, loop: 14, spike: 8, water: 13, lift: 8, climb: 6 } },
+  [ // Acuática: balsas, bucles, valles con laguna, pinchos de coral, agua y mesetas
+    { len: 1000, enemies: 0.5, fly: 0.3, shoot: 0.1, wasp: 0.3, hop: 0.1, spiny: 0.1, w: { run: 20, hills: 8, dip: 8, gap: 14, boost: 4, loop: 7, spike: 6, water: 9, lift: 6, climb: 4 } },
+    { len: 1150, enemies: 0.6, fly: 0.35, shoot: 0.15, wasp: 0.35, hop: 0.15, spiny: 0.15, w: { run: 16, hills: 8, dip: 10, gap: 14, boost: 4, loop: 9, spike: 7, water: 11, lift: 7, climb: 5 } },
+    { len: 1300, enemies: 0.7, fly: 0.4, shoot: 0.2, wasp: 0.4, hop: 0.2, spiny: 0.2, w: { run: 14, hills: 6, dip: 12, gap: 14, boost: 4, loop: 12, spike: 7, water: 13, lift: 8, climb: 6 } },
   ],
 ];
 
@@ -105,7 +105,7 @@ export function buildLevel(zi, ai) {
   const rnd = (a, b) => a + (b - a) * rng();
   const lv = {
     zone: zi, act: ai, endX: 0, goalX: 0, goalY: 0, killY: KILL_Y[zi], t: 0,
-    solids: [], enemies: [], rings: [], checkpoints: [], paths: [], galleries: [], shots: [],
+    solids: [], enemies: [], rings: [], checkpoints: [], paths: [], galleries: [], shots: [], falls: [],
   };
   const S = lv.solids;
   let x = -10, top = 0, nextCp = 60;
@@ -168,13 +168,25 @@ export function buildLevel(zi, ai) {
         const fx0 = rnd(x0 + 4, x1 - 16), fw = rnd(8, 12);
         lv.enemies.push({ type: 'fly', x: fx0, minX: fx0, maxX: fx0 + fw, dir: rng() < 0.5 ? -1 : 1, speed: rnd(2.2, 3.2), base: top + rnd(1.8, 2.4), y: top + 2, phase: rng() * 6, alive: true, inv: 0, r: 0.5 });
       }
+      if (len > 20 && rng() < prof.hop) {              // saltamontes: camina despacio y da saltos por el tramo
+        const hx = rnd(x0 + 4, x1 - 10);
+        lv.enemies.push({ type: 'hop', x: hx, minX: x0 + 2, maxX: x1 - 6, dir: rng() < 0.5 ? -1 : 1, y: top, cd: rnd(0.5, 2), air: false, yv: 0, hv: 0, phase: rng() * 6, alive: true, inv: 0, r: 0.5 });
+      }
+      if (len > 20 && rng() < prof.spiny) {            // erizo con púas: solo lo destruye rodar o cargar
+        const ex = rnd(x0 + 4, x1 - 8);
+        lv.enemies.push({ type: 'spiny', spiky: true, x: ex, minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, speed: rnd(1.6, 2.2), y: top, phase: rng() * 6, alive: true, inv: 0, r: 0.5 });
+      }
+      if (len > 24 && rng() < prof.wasp) {             // avispa: ondula sobre el tramo y a veces se lanza en picado
+        const wx0 = rnd(x0 + 4, x1 - 14), ww = rnd(8, 12), wb = top + rnd(2.2, 3.2);
+        lv.enemies.push({ type: 'wasp', x: wx0, minX: wx0, maxX: wx0 + ww, dir: rng() < 0.5 ? -1 : 1, base: wb, y: wb, mode: 'patrol', diveT: 0, cd: rnd(1, 3), phase: rng() * 6, alive: true, inv: 0, r: 0.45 });
+      }
       if (len > 30 && rng() < prof.shoot) {            // torreta en el suelo, lejos del inicio del tramo (el punto de control no cae en su alcance)
         const sx = rnd(x0 + 16, x1 - 10);
         lv.enemies.push({ type: 'shoot', x: sx, minX: sx, maxX: sx, dir: -1, speed: 0, y: top, cd: rnd(0.5, 1.5), phase: 0, alive: true, inv: 0, r: 0.5 });
       }
       if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
       // Muelles y piedras lejos del final del tramo: el vuelo del muelle cae dentro del tramo
-      if (len > 32 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 28), top);
+      if (len > 40 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 34), top);
       if (len > 14 && rng() < 0.18) boulder(rnd(x0 + 4, x1 - 9), top);
       if (len > 20 && rng() < 0.22) {
         let ax = rnd(x0 + 4, x1 - 19);
@@ -309,6 +321,9 @@ export function buildLevel(zi, ai) {
     flightRings(sp, top, [0.25, 0.45, 0.65]);
     ringArc(b0 + wd / 2, top + 2.4, wd, 3);
     ringArc(b1 + 9, top + 7.7, 6, 5);                  // arco de anillos sobre la meseta
+    if (kind === 'water') {                            // pez saltarín escondido bajo el agua del hueco
+      lv.enemies.push({ type: 'fish', x: (b0 + b1) / 2, minX: b0, maxX: b1, dir: 1, speed: 0, base: top - 2.0, y: top - 2.0, yv: 0, leap: false, cd: rnd(0.5, 2), gap: rnd(2.2, 3.2), alive: true, inv: 0, r: 0.5 });
+    }
     x = mesa(b1, 6.5, 26, 10);
   };
 
@@ -327,7 +342,7 @@ export function buildLevel(zi, ai) {
   const climbSec = () => {
     if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
     const sp1 = x + rnd(9, 12), wx1 = sp1 + WALL;
-    const sp2 = wx1 + 18, wx2 = sp2 + WALL;          // el vuelo del primer muelle cae entre los dos muelles
+    const sp2 = wx1 + 20, wx2 = sp2 + WALL;          // el vuelo del primer muelle cae entre los dos muelles
     pushGround(x, wx1, top);
     spring(sp1, top);
     flightRings(sp1, top, [0.25, 0.45]);
@@ -337,6 +352,47 @@ export function buildLevel(zi, ai) {
     ringArc(wx1 + 9, top + 5.2, 6, 5);
     x = mesa(wx2, 8, 12, 12);
     ringArc(wx2 + 6, top + 9.2, 6, 5);
+  };
+
+  // Valle: bajada en rampa hasta un fondo llano con franja de aceleración y subida en rampa. En la zona acuática
+  // el fondo es una laguna poco profunda que se atraviesa chapoteando.
+  const dipSec = () => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const D = zi === 2 ? 2.2 : rnd(5.5, 7);
+    const Ld = rnd(14, 18), Lf = rnd(8, 12), Lu = rnd(14, 18);
+    const x0 = x, fl = top - D, xf = x0 + Ld, xu = xf + Lf;
+    S.push({ kind: 'slope', x0, x1: xf, ya: top, yb: fl, y0: -4, y1: top });
+    if (zi === 2) S.push({ kind: 'ground', x0: xf, x1: xu, y0: -4, y1: fl, wade: true, wl: fl + 0.8 });
+    else S.push({ kind: 'ground', x0: xf, x1: xu, y0: -4, y1: fl, boost: 1 });
+    S.push({ kind: 'slope', x0: xu, x1: xu + Lu, ya: fl, yb: top, y0: -4, y1: top });
+    ringLine(xf + 1, xu - 1, fl + 1.3, 5);
+    x = xu + Lu;
+  };
+
+  // Arroyo: un hueco poco profundo con agua por el que se chapotea (más despacio que en la pista)
+  const streamSec = () => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const L = rnd(14, 18), D = 1.1, x0 = x;
+    S.push({ kind: 'slope', x0, x1: x0 + 2.5, ya: top, yb: top - D, y0: -4, y1: top });
+    S.push({ kind: 'ground', x0: x0 + 2.5, x1: x0 + L - 2.5, y0: -4, y1: top - D, wade: true, wl: top - 0.3 });
+    S.push({ kind: 'slope', x0: x0 + L - 2.5, x1: x0 + L, ya: top - D, yb: top, y0: -4, y1: top });
+    ringLine(x0 + 4, x0 + L - 4, top + 0.8, 4);
+    x = x0 + L;
+  };
+
+  // Cascada: un muelle lanza a una meseta alta; su borde cae a un estanque poco profundo y una rampa vuelve a la pista
+  const cascadeSec = () => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const sp = x + rnd(9, 12), wx = sp + 11, Lm = 14, PD = 4, px = wx + Lm;
+    pushGround(x, wx, top);
+    spring(sp, top);
+    flightRings(sp, top, [0.25, 0.45]);
+    S.push({ kind: 'ground', x0: wx, x1: px, y0: -4, y1: top + 6.5 });
+    S.push({ kind: 'ground', x0: px, x1: px + 16, y0: -4, y1: top - PD, wade: true, wl: top - PD + 1.3 });
+    S.push({ kind: 'slope', x0: px + 16, x1: px + 26, ya: top - PD, yb: top, y0: -4, y1: top });
+    lv.falls.push({ x: px, yTop: top + 6.5, yBot: top - PD + 1.3, w: 2.2 });
+    ringArc(wx + 7, top + 7.7, 6, 5);
+    x = px + 26;
   };
 
   // Inicio tranquilo y después secciones según el perfil del acto
@@ -351,6 +407,9 @@ export function buildLevel(zi, ai) {
     else if (r === 'gallery') { gallerySec(); runSec(rnd(10, 16)); }
     else if (r === 'spike') hazardSec('spikes', zi < 2 && rng() < 0.5);
     else if (r === 'water') hazardSec('water', false);
+    else if (r === 'dip') { dipSec(); runSec(rnd(12, 18)); }          // la subida termina en un tramo llano (no en un hueco)
+    else if (r === 'stream') { streamSec(); runSec(rnd(12, 18)); }
+    else if (r === 'cascade') { cascadeSec(); runSec(rnd(12, 18)); }
     else if (r === 'lift') liftSec();
     else if (r === 'climb') climbSec();
   }

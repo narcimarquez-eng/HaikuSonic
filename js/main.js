@@ -145,7 +145,7 @@ function updateVisuals(t, dt) {
   if (!W) return;
   updatePlayer(PV, player, t, dt);
   updateWorld(W, G.lv, t, dt, player.x);
-  for (const f of G.fx) spawnBurst(fx, f.x, f.y);
+  for (const f of G.fx) spawnBurst(fx, f.x, f.y, f.n, f.pal);
   G.fx.length = 0;
   updateFx(fx, dt);
   updateCamera(dt);

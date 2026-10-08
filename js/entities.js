@@ -84,8 +84,9 @@ function enemySet(geos, mats, N, root) {
 }
 
 // Crea anillos, enemigos, postes y meta. Anillos y enemigos son instancias compartidas (pocas llamadas de dibujo)
-const MODEL_OF = { fly: 'flyer', shoot: 'shooter', boss: 'boss' };   // tipo de enemigo -> modelo de Blender
+const MODEL_OF = { fly: 'flyer', shoot: 'shooter', boss: 'boss', wasp: 'wasp', hop: 'hopper', spiny: 'spiky', fish: 'fish' };   // tipo de enemigo -> modelo de Blender
 const SHOT_MAX = 40;                                                   // proyectiles de enemigos visibles a la vez
+const SIZE_OF = { wasp: 1.25, hop: 1.15, spiny: 1.15, fish: 1.2 };     // los enemigos pequeños se dibujan un poco más grandes
 const _id = new THREE.Matrix4();
 
 // Piezas de un modelo como mallas instanciadas (una por pieza y tipo): si el modelo no cargó, una esfera de respaldo
@@ -203,10 +204,10 @@ export function updateEntities(E, lv, t, dt) {
   // Drones, torretas y jefes: cada enemigo mueve todas las piezas de su modelo; el jefe late al recibir un golpe
   for (const set of E.models) {
     set.list.forEach((e, k) => {
-      const face = e.type === 'fly' ? e.dir : (e.face ?? 1);
+      const face = e.face ?? 1;                              // hacia donde mira (lo fija la física)
       const pulse = e.inv > 0 ? 1 + 0.08 * Math.sin(t * 60) : 1;
       _pos.set(e.x, e.y, 0); _q.setFromEuler(_eul.set(0, face < 0 ? Math.PI : 0, 0));
-      _sc.setScalar((e.alive ? 1 : 0) * pulse);
+      _sc.setScalar((e.alive ? 1 : 0) * pulse * (SIZE_OF[e.type] || 1));
       _b.compose(_pos, _q, _sc);
       for (const pt of set.parts) pt.im.setMatrixAt(k, m.multiplyMatrices(_b, pt.m));
     });
