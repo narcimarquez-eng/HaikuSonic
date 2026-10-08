@@ -21,17 +21,23 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 ## Contenido
 
 - 3 zonas (Verde, Industrial, Acuática) × 3 actos = 9 niveles generados proceduralmente con semilla fija.
-- Tramos planos largos para correr, rampas que suben y bajan, huecos con puente opcional y plataformas con pilares.
+- Tramos planos largos para correr, rampas que suben y bajan, huecos con puente opcional.
+- Franjas de aceleración con flechas: al pisarlas, el erizo sale disparado.
+- Salientes de roca que se pasan por debajo (no se puede saltar a través de ellos).
+- Puentes con cuerdas o barandillas, plataformas de roca con hierba y móviles con engranajes.
 - Anillos (instancing), muelles, plataformas de una cara, plataformas móviles, enemigos que se pisan o se destruyen rodando, postes de control y meta.
 - Texturas procedurales (sin imágenes externas) para hierba, tierra, madera, acero, arena y roca.
 - Iluminación con sombras, reflejos de entorno y tone mapping; cielo y agua con shaders propios.
 - Terreno de fondo continuo con la pista: colinas, bosque, fábricas con humo y mar con islas, todo apoyado en el suelo.
+- Hierba 3D (briznas instanciadas) y flores sobre el suelo de la zona verde; suelo con cuadros estilo Green Hill.
+- Arcos de roca en el fondo, tótems, setas, palmeras, muelles y montañas lejanas.
 - Enemigos robot con cúpula, antenas y ruedas que giran.
 - El erizo gira en el salto y rueda al correr con SPIN.
 
 ## Limitaciones actuales
 
-- Sin bucles ni raíles todavía.
+- Sin bucles, tubos ni túneles por los que el carril atraviese la pantalla: con esta cámara 2.5D taparían al jugador. Los salientes de roca son la alternativa.
+- Sin raíles con cuerdas ni cadenas colgantes todavía.
 - Sin sonido.
 - Los escenarios son geometría procedural de Three.js; no se usan modelos de Blender.
 

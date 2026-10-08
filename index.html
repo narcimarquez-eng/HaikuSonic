@@ -118,7 +118,7 @@
 <div id="title" class="overlay">
   <h1>HaikuSonic</h1>
   <p>Plataformas 2.5D · 3 zonas × 3 actos</p>
-  <p>Joystick: moverse · SALTAR: saltar · SPIN: mantén para cargar y suelta para arrancar. Mantén abajo mientras corres para rodar. En el aire, SPIN te lanza hacia abajo.</p>
+  <p>Joystick: moverse · SALTAR: saltar · SPIN: mantén para cargar y suelta para arrancar. Mantén abajo mientras corres para rodar. En el aire, SPIN te lanza hacia abajo. Las franjas con flechas aceleran.</p>
   <button id="btnPlay">JUGAR</button>
 </div>
 
@@ -156,6 +156,7 @@ const EPS = 0.01;
 const TOP_SPEED = 22, ACCEL = 16, FRICTION = 12, ROLL_FRICTION = 5;
 const JUMP_V = 15.5, SPRING_V = 26, MAX_FALL = 48;
 const DASH_MIN = 14, DASH_RANGE = 14;
+const BOOST_V = 28;                // velocidad mínima sobre una franja de aceleración
 const ENEMY_R = 0.45, RING_R = 0.8, MAX_SCATTER = 60;
 const LEVELS = 9;                  // 3 zonas × 3 actos
 const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyW', 'KeyZ'];
@@ -170,6 +171,7 @@ const ZONES = [
   { name: 'Zona Acuática', decor: 'water', killY: -3.4, water: true,
     skyTop: 0x2c8fe0, skyBottom: 0xcdf5ff, fog: 0x9be3f2, accent: 0x00e5ff, enemy: 0xff7043 },
 ];
+const ACCENTS = ['#ffd24a', '#ff9800', '#00e5ff'];
 
 /* ============================================================
    Utilidades
@@ -190,12 +192,12 @@ const std = (color, roughness = 0.6, metalness = 0) => new THREE.MeshStandardMat
 /* ============================================================
    Texturas procedurales (canvas): sin imágenes externas
    ============================================================ */
-function makeTex(draw, size = 256) {
+function makeTex(draw, size = 256, gray = false) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   draw(c.getContext('2d'), size);
   const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
+  t.colorSpace = gray ? THREE.NoColorSpace : THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 4;
   return t;
@@ -216,12 +218,13 @@ function speckle(g, s, rnd, n, cols, rMin, rMax, alpha) {
   }
   g.globalAlpha = 1;
 }
-function blades(g, s, rnd, n, cols) {
-  g.lineWidth = 1.2;
+// Briznas de hierba: trazos cortos que nacen de la tierra
+function blades(g, s, rnd, n, cols, lw = 1.2, len = 8) {
+  g.lineWidth = lw; g.lineCap = 'round';
   for (let i = 0; i < n; i++) {
     g.strokeStyle = cols[Math.floor(rnd() * cols.length)];
-    const x = rnd() * s, y = rnd() * s, a = (rnd() - 0.5) * 0.8, l = 3 + rnd() * 5;
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.sin(a) * l, y - Math.cos(a) * l); g.stroke();
+    const x = rnd() * s, y = rnd() * s, a = (rnd() - 0.5) * 0.7, l = 3 + rnd() * len;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.sin(a) * l * 0.4, y - l * 0.6, x + Math.sin(a) * l, y - Math.cos(a) * l); g.stroke();
   }
 }
 
@@ -230,6 +233,7 @@ function zoneTex(zi) {
   if (TEX[zi]) return TEX[zi];
   const rnd = mulberry32(4242 + zi * 77);
   const T = {};
+  const acc = ACCENTS[zi];
   T.blob = makeTex((g, s) => {
     const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
     gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
@@ -244,16 +248,45 @@ function zoneTex(zi) {
     for (let i = 0; i < 90; i++) { g.strokeStyle = rnd() < 0.5 ? '#3d2614' : '#8a5d36'; g.globalAlpha = 0.4; g.lineWidth = 1 + rnd() * 2; const x = rnd() * s; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (rnd() - 0.5) * 6, s); g.stroke(); }
     g.globalAlpha = 1;
   });
-  if (zi === 0) {            // Verde: hierba, tierra, madera
+  // Relieve para la hierba y las rocas (escala de grises)
+  T.grassBump = makeTex((g, s) => {
+    g.fillStyle = '#808080'; g.fillRect(0, 0, s, s);
+    speckle(g, s, rnd, 900, ['#9a9a9a', '#5c5c5c', '#b4b4b4'], 1, 3, 0.7);
+    blades(g, s, rnd, 900, ['#ffffff', '#202020'], 1.4, 9);
+  }, 256, true);
+  T.rock = makeTex((g, s) => {
+    const base = zi === 0 ? '#8c8577' : zi === 1 ? '#5d6670' : '#a58b68';
+    g.fillStyle = base; g.fillRect(0, 0, s, s);
+    speckle(g, s, rnd, 1300, ['#6f6a5f', '#b3ab99', '#5a554c', '#c4bba6'], 1, 4.5, 0.8);
+    g.strokeStyle = 'rgba(30,25,20,.45)'; g.lineWidth = 1.5;
+    for (let i = 0; i < 9; i++) { let x = rnd() * s, y = rnd() * s; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 3; k++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; g.lineTo(x, y); } g.stroke(); }
+  });
+  T.chevron = makeTex((g, s) => {          // flechas de aceleración
+    g.fillStyle = '#23272e'; g.fillRect(0, 0, s, s);
+    g.fillStyle = acc;
+    for (let k = -1; k < 3; k++) {
+      const x = k * s / 2;
+      g.beginPath();
+      g.moveTo(x + 20, 40); g.lineTo(x + 70, 128); g.lineTo(x + 20, 216);
+      g.lineTo(x + 36, 216); g.lineTo(x + 86, 128); g.lineTo(x + 36, 40);
+      g.closePath(); g.fill();
+    }
+  });
+  if (zi === 0) {            // Verde: hierba con tonos, tierra a cuadros y madera
     T.grass = makeTex((g, s) => {
-      g.fillStyle = '#4fae3e'; g.fillRect(0, 0, s, s);
-      speckle(g, s, rnd, 1400, ['#66c24d', '#3a8f2e', '#8fd66a'], 1, 3.2, 0.7);
-      blades(g, s, rnd, 600, ['#7fd458', '#2e7d32', '#a6e070']);
+      g.fillStyle = '#3f9a34'; g.fillRect(0, 0, s, s);
+      speckle(g, s, rnd, 520, ['#4aad3c', '#2f7a2a', '#5cbf45'], 6, 22, 0.35);
+      speckle(g, s, rnd, 2200, ['#66c24d', '#2e7d32', '#8fd66a', '#25621f'], 1, 3, 0.8);
+      blades(g, s, rnd, 1600, ['#7fd458', '#2e7d32', '#a6e070', '#1f5a1f'], 1.2, 9);
+      speckle(g, s, rnd, 50, ['#6b4a2b', '#5a3e22'], 1.5, 3, 0.7);
     });
-    T.dirt = makeTex((g, s) => {
-      g.fillStyle = '#8a5a2e'; g.fillRect(0, 0, s, s);
-      speckle(g, s, rnd, 1300, ['#6b4220', '#a8743f', '#4f3015'], 1, 3, 0.8);
-      for (let y = 0; y < s; y += 32) { g.fillStyle = 'rgba(0,0,0,.08)'; g.fillRect(0, y + (rnd() * 6), s, 3); }
+    T.dirt = makeTex((g, s) => {            // tierra con cuadros estilo Green Hill
+      const cs = 32;
+      for (let y = 0; y < s; y += cs) for (let x = 0; x < s; x += cs) {
+        g.fillStyle = ((x + y) / cs) % 2 === 0 ? '#9a6a3a' : '#7a4c25';
+        g.fillRect(x, y, cs, cs);
+      }
+      speckle(g, s, rnd, 900, ['#6b4220', '#b98550', '#4f3015'], 1, 3, 0.6);
     });
     T.plank = makeTex((g, s) => {
       g.fillStyle = '#b07a42'; g.fillRect(0, 0, s, s);
@@ -300,7 +333,7 @@ function zoneTex(zi) {
     });
     T.hill = T.plank;
     T.foliage = T.plank;
-  } else {                   // Acuática: arena, arenisca, roca
+  } else {                   // Acuática: arena con ondas, arenisca, roca
     T.grass = makeTex((g, s) => {
       g.fillStyle = '#e6c98a'; g.fillRect(0, 0, s, s);
       for (let y = 0; y < s; y += 14) { g.strokeStyle = 'rgba(190,150,80,.28)'; g.lineWidth = 2; g.beginPath(); for (let x = 0; x <= s; x += 8) g.lineTo(x, y + Math.sin(x / 14 + y) * 2.5); g.stroke(); }
@@ -311,12 +344,7 @@ function zoneTex(zi) {
       for (let y = 0; y < s; y += 28) { g.fillStyle = `rgba(80,50,20,${0.08 + rnd() * 0.12})`; g.fillRect(0, y, s, 5 + rnd() * 6); }
       speckle(g, s, rnd, 900, ['#8c6638', '#c99a64', '#6e4c28'], 1, 3, 0.7);
     });
-    T.plank = makeTex((g, s) => {          // roca
-      g.fillStyle = '#7d6a5c'; g.fillRect(0, 0, s, s);
-      speckle(g, s, rnd, 1200, ['#6a5a4d', '#9a8a7a', '#5a4b40'], 1, 4, 0.8);
-      g.strokeStyle = 'rgba(30,20,15,.4)'; g.lineWidth = 1.5;
-      for (let i = 0; i < 8; i++) { let x = rnd() * s, y = rnd() * s; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 3; k++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; g.lineTo(x, y); } g.stroke(); }
-    });
+    T.plank = T.rock;
     T.platTop = T.grass;
     T.leaf = T.foliage;
     T.hill = T.foliage;
@@ -326,6 +354,12 @@ function zoneTex(zi) {
 }
 // Copia de una textura con otra repetición (comparte la imagen)
 function tiled(tex, rx, ry) { const t = tex.clone(); t.repeat.set(rx, ry); return t; }
+// Material de superficie con relieve (hierba o roca)
+function surfMat(T, tex, w, h, rough = 0.85) {
+  const m = new THREE.MeshStandardMaterial({ map: tiled(tex, w / 4, h / 4), roughness: rough });
+  if (T.grassBump) { m.bumpMap = tiled(T.grassBump, w / 4, h / 4); m.bumpScale = 1.6; }
+  return m;
+}
 
 /* ============================================================
    Geometría compartida (una sola vez para todo el juego)
@@ -337,7 +371,15 @@ const UNIT_CONE = new THREE.ConeGeometry(1, 1, 12);
 const UNIT_ROCK = new THREE.DodecahedronGeometry(1, 0);
 const RING_GEO = new THREE.TorusGeometry(0.34, 0.09, 10, 20);
 const LIMB_GEO = new THREE.CapsuleGeometry(0.1, 0.26, 4, 10);
-const SHARED_GEO = new Set([UNIT_BOX, UNIT_SPHERE, UNIT_CYL, UNIT_CONE, UNIT_ROCK, RING_GEO, LIMB_GEO]);
+// Brizna de hierba: triángulos curvados de 0.6 de alto (base en y = 0)
+const BLADE_GEO = (() => {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([-0.05, 0, 0, 0.05, 0, 0, -0.032, 0.3, 0.01, 0.032, 0.3, 0.01, 0, 0.6, 0.03], 3));
+  geo.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4]);
+  geo.computeVertexNormals();
+  return geo;
+})();
+const SHARED_GEO = new Set([UNIT_BOX, UNIT_SPHERE, UNIT_CYL, UNIT_CONE, UNIT_ROCK, RING_GEO, LIMB_GEO, BLADE_GEO]);
 
 function addBox(parent, mat, x, y, z, sx, sy, sz) {
   const m = new THREE.Mesh(UNIT_BOX, mat);
@@ -375,6 +417,21 @@ function spike(parent, mat, cx, cy, r, len, a) {
 // Prisma extruido a lo largo de z a partir de un polígono en XY (para rampas)
 function prism(parent, pts, zStart, depth, mat) {
   const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
+  geo.translate(0, 0, zStart);
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = true; m.receiveShadow = true;
+  parent.add(m); return m;
+}
+// Saliente de roca tipo arco visto de lado: base plana y lomo curvo
+function lensShape(x0, x1, base, h, extra = 0.6) {
+  const s = new THREE.Shape();
+  s.moveTo(x0 - extra, base);
+  s.quadraticCurveTo((x0 + x1) / 2, base + h * 2.4, x1 + extra, base);
+  s.lineTo(x0 - extra, base);
+  return s;
+}
+function extrudeZ(parent, shape, zStart, depth, mat) {
   const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
   geo.translate(0, 0, zStart);
   const m = new THREE.Mesh(geo, mat);
@@ -512,17 +569,18 @@ bindHold(document.getElementById('spin'), () => { input.touchSpin = true; input.
 /* ============================================================
    Terreno y geometría de la pista
    Sólidos:
-     'ground'   suelo plano (y1 = altura de la superficie), bloquea por los lados
+     'ground'   suelo plano (y1 = altura), bloquea por los lados; boost:1 = franja de aceleración
      'slope'    rampa de ya a yb entre x0 y x1, se puede subir y bajar
-     'spring'   muelle sobre el suelo, bloquea por los lados
-     'platform' plataforma de una cara (se salta desde abajo)
+     'spring'   muelle sobre el suelo; de lado te lanza hacia arriba
+     'platform' plataforma de una cara (se salta desde abajo); mover:true = móvil
+     'ceiling'  saliente de roca: no se puede saltar a través de él
    ============================================================ */
 const slopeAt = (s, x) => s.ya + (s.yb - s.ya) * Math.min(1, Math.max(0, (x - s.x0) / (s.x1 - s.x0)));
 
 // Altura de la superficie bajo el jugador en la coordenada x
 function laneY(solids, x) {
   for (const s of solids) {
-    if (s.kind === 'platform' || s.kind === 'spring') continue;
+    if (s.kind === 'platform' || s.kind === 'spring' || s.kind === 'ceiling') continue;
     if (x < s.x0 || x > s.x1) continue;
     return s.kind === 'slope' ? slopeAt(s, x) : s.y1;
   }
@@ -550,10 +608,19 @@ function buildLevel(n) {
     kind: 'platform', mover: true, base, amp: rnd(2, 4), speed: rnd(0.6, 1.1), ph: rng() * 6,
     w: 3.2, cx: base, prevCx: base, x0: base - 1.6, x1: base + 1.6, y0: y - 0.5, y1: y,
   });
-  // Tramo plano: suelo + enemigos, anillos, muelles y plataformas altas
+  // Saliente de roca: se pasa por debajo, pero no se puede saltar a través de él
+  const overhang = (ax, top) => S.push({ kind: 'ceiling', x0: ax, x1: ax + 5, y0: top + 2.8, y1: top + 4.1, base: top });
+  // Tramo plano: suelo + enemigos, anillos, muelles, plataformas y salientes
   const flat = (x0, x1, top, quiet = false) => {
-    S.push({ kind: 'ground', x0, x1, y0: -4, y1: top });
     const len = x1 - x0;
+    if (!quiet && len > 16 && rng() < 0.35) {          // franja de aceleración
+      const a = rnd(x0 + 3, x1 - 12), b = a + rnd(6, 9);
+      S.push({ kind: 'ground', x0, x1: a, y0: -4, y1: top });
+      S.push({ kind: 'ground', x0: a, x1: b, y0: -4, y1: top, boost: 1 });
+      S.push({ kind: 'ground', x0: b, x1, y0: -4, y1: top });
+    } else {
+      S.push({ kind: 'ground', x0, x1, y0: -4, y1: top });
+    }
     if (!quiet) {
       if (len > 10 && rng() < 0.55) {
         lv.enemies.push({ x: rnd(x0 + 4, x1 - 4), minX: x0 + 1, maxX: x1 - 1, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });
@@ -570,6 +637,12 @@ function buildLevel(n) {
         S.push({ kind: 'spring', x0: px + 0.3, x1: px + 1.5, y0: top, y1: top + 0.6, power: SPRING_V, squash: 0 });
       }
       if (len > 12 && rng() < 0.3) mover(rnd(x0 + 4, x1 - 4), top + rnd(1.8, 2.6));
+      // Los salientes terminan lejos del final del tramo: nunca se salta un hueco bajo techo
+      if (len > 26 && rng() < 0.4) {
+        let ax = rnd(x0 + 4, x1 - 19);
+        const count = rng() < 0.5 ? 1 : 2;
+        for (let i = 0; i < count && ax + 5 <= x1 - 14; i++) { overhang(ax, top); ax += rnd(9, 11); }
+      }
     }
   };
   // Rampa de cambio de altura con anillos siguiendo la pendiente
@@ -594,7 +667,7 @@ function buildLevel(n) {
       const gap = rnd(2.8, 4.4);
       if (rng() < 0.6) {
         const py = cy + rnd(1.6, 2.2);
-        S.push({ kind: 'platform', x0: x - 0.8, x1: x + gap + 0.8, y0: py - 0.6, y1: py });
+        S.push({ kind: 'platform', x0: x - 0.8, x1: x + gap + 0.8, y0: py - 0.6, y1: py, bridge: true });
         ringArc(x + gap / 2, py + 1.2, gap, 4);
       }
       x += gap;
@@ -634,6 +707,50 @@ function bgHeight(kind, lane, x, d) {
   return h;
 }
 
+// Hierba 3D: briznas instanciadas (y flores opcionales) sobre superficies
+function addGrass(g, surfs, density, rnd, flowers) {
+  const pts = [];
+  for (const s of surfs) {
+    const n = Math.floor((s.x1 - s.x0) * density);
+    for (let i = 0; i < n; i++) {
+      const x = s.x0 + rnd() * (s.x1 - s.x0), z = s.z0 + rnd() * (s.z1 - s.z0);
+      pts.push([x, s.y(x), z]);
+    }
+  }
+  const N = pts.length * 3;
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide });
+  const blade = new THREE.InstancedMesh(BLADE_GEO, bladeMat, Math.max(1, N));
+  blade.count = N;
+  blade.frustumCulled = false;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
+  let k = 0;
+  for (const [x, y, z] of pts) for (let b = 0; b < 3; b++) {
+    e.set((rnd() - 0.5) * 0.4, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.4);
+    q.setFromEuler(e);
+    sc.set(1, 0.7 + rnd() * 0.7, 1);
+    p.set(x + (rnd() - 0.5) * 0.25, y, z + (rnd() - 0.5) * 0.6);
+    m.compose(p, q, sc); blade.setMatrixAt(k, m);
+    col.setHSL(0.25 + (rnd() - 0.5) * 0.05, 0.5 + rnd() * 0.25, 0.22 + rnd() * 0.2);
+    blade.setColorAt(k, col);
+    k++;
+  }
+  g.add(blade);
+  if (flowers) {
+    const F = Math.max(1, Math.floor(pts.length * 0.12));
+    const stems = new THREE.InstancedMesh(UNIT_CYL, std(0x3f8f3a, 0.8), F);
+    const heads = new THREE.InstancedMesh(UNIT_SPHERE, std(0xffffff, 0.5), F);
+    stems.count = heads.count = F;
+    const cols = [0xffffff, 0xffd54a, 0xff7aa8, 0xc58cff];
+    for (let i = 0; i < F; i++) {
+      const [x, y, z] = pts[Math.floor(rnd() * pts.length)];
+      p.set(x, y + 0.2, z); sc.set(0.012, 0.4, 0.012); m.compose(p, new THREE.Quaternion(), sc); stems.setMatrixAt(i, m);
+      p.set(x, y + 0.43, z); sc.setScalar(0.07); m.compose(p, new THREE.Quaternion(), sc); heads.setMatrixAt(i, m);
+      heads.setColorAt(i, col.setHex(cols[Math.floor(rnd() * cols.length)]));
+    }
+    g.add(stems, heads);
+  }
+}
+
 function buildBackdrop(lv, zone, T, g) {
   const kind = zone.decor, S = lv.solids;
   const rnd = mulberry32(lv.n * 31 + 7);
@@ -662,9 +779,26 @@ function buildBackdrop(lv, zone, T, g) {
   geo.setIndex(idx);
   geo.computeVertexNormals();
   const mapTex = kind === 'green' ? T.grass : T.dirt;
-  const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tiled(mapTex, 1, 1), vertexColors: true, roughness: 0.95 }));
+  // La malla ya lleva las coordenadas UV escaladas (1 repetición = 4 unidades)
+  const terrainMat = new THREE.MeshStandardMaterial({ map: mapTex, roughness: 0.95, vertexColors: true });
+  if (T.grassBump) { terrainMat.bumpMap = T.grassBump; terrainMat.bumpScale = 1.2; }
+  const terrain = new THREE.Mesh(geo, terrainMat);
   terrain.receiveShadow = true;
   g.add(terrain);
+
+  // Montañas o skyline muy lejanos (silueta con niebla)
+  const farMat = new THREE.MeshStandardMaterial({ color: kind === 'industrial' ? 0x3a3f4a : kind === 'water' ? 0x6f9bb8 : 0x8fa8c8, roughness: 1 });
+  for (let x = x0 - 20; x < x1 + 40; x += 18 + rnd() * 16) {
+    if (kind === 'industrial') {
+      const h = 14 + rnd() * 26, w = 6 + rnd() * 8;
+      addBox(g, farMat, x, h / 2 - 3, -120 - rnd() * 30, w, h, 8);
+    } else {
+      const h = 26 + rnd() * 26, r = 14 + rnd() * 14;
+      const m = new THREE.Mesh(UNIT_CONE, farMat);
+      m.position.set(x, h / 2 - 4, -115 - rnd() * 35); m.scale.set(r, h, r);
+      g.add(m);
+    }
+  }
 
   // Decoración repartida sobre el terreno, a su altura real
   const chimneys = [];
@@ -674,39 +808,63 @@ function buildBackdrop(lv, zone, T, g) {
   if (kind === 'green') {
     const bark = new THREE.MeshStandardMaterial({ map: tiled(T.bark, 1, 3), roughness: 0.9 });
     const leaf = new THREE.MeshStandardMaterial({ map: tiled(T.leaf, 1, 1), roughness: 0.85 });
-    const rock = new THREE.MeshStandardMaterial({ color: 0x8c8a84, roughness: 0.95 });
+    const rock = new THREE.MeshStandardMaterial({ map: tiled(T.rock, 1, 1), roughness: 0.95 });
+    const wood = std(0x8a5a2b, 0.8);
+    const cap = std(0xd7262b, 0.5), dots = std(0xffffff, 0.4);
     for (const sp of spots) {
       const y = H(sp.x, sp.d), r = rnd();
       const s = 0.8 + rnd() * 0.7;
       const t = new THREE.Group(); t.position.set(sp.x, y, LANE_Z - sp.d); t.scale.setScalar(s);
       g.add(t);
-      if (r < 0.42) {                                   // árbol redondo
+      if (r < 0.3) {                                    // árbol redondo
         cyl(t, bark, 0, 1.7, 0, 0.22, 3.4);
         sph(t, leaf, -0.3, 3.9, 0, 1.5);
         sph(t, leaf, 0.9, 4.3, 0.3, 1.1);
         sph(t, leaf, -0.6, 4.9, -0.2, 0.9);
-      } else if (r < 0.72) {                            // pino escalonado
+        sph(t, leaf, 0.2, 5.4, 0.1, 0.8);
+      } else if (r < 0.5) {                             // pino escalonado
         cyl(t, bark, 0, 1.2, 0, 0.18, 2.4);
         cone(t, leaf, 0, 2.6, 0, 1.5, 2.6);
         cone(t, leaf, 0, 3.9, 0, 1.15, 2.2);
         cone(t, leaf, 0, 5.1, 0, 0.75, 1.8);
-      } else if (r < 0.9) {                             // matorral
+      } else if (r < 0.62) {                            // matorral con flores
         sph(t, leaf, 0, 0.7, 0, 1.0, 0.7, 0.9);
         sph(t, leaf, 1.0, 0.5, 0.4, 0.7, 0.5, 0.6);
         sph(t, leaf, -0.9, 0.5, -0.2, 0.75, 0.55, 0.7);
-      } else {                                          // roca
+        sph(t, dots, 0.3, 1.2, 0.8, 0.08); sph(t, std(0xff7aa8, 0.5), -0.5, 1.1, 0.6, 0.08);
+      } else if (r < 0.7) {                             // tótem de madera
+        for (let k = 0; k < 4; k++) {
+          cyl(t, wood, 0, 0.5 + k * 1.1, 0, 0.32 - k * 0.02, 1.0);
+          sph(t, dots, 0.2, 0.7 + k * 1.1, 0.3, 0.07); sph(t, dots, -0.2, 0.7 + k * 1.1, 0.3, 0.07);
+        }
+      } else if (r < 0.82) {                            // seta
+        cyl(t, std(0xf1e6d0, 0.7), 0, 0.3, 0, 0.12, 0.6);
+        sph(t, cap, 0, 0.62, 0, 0.32, 0.22, 0.32);
+        sph(t, dots, 0.1, 0.8, 0.12, 0.05);
+      } else if (r < 0.9) {                             // roca
         const rk = new THREE.Mesh(UNIT_ROCK, rock);
-        rk.position.set(0, 0.6, 0); rk.scale.setScalar(1.1 + rnd() * 0.8);
+        rk.position.set(0, 0.6, 0); rk.scale.set(1.2 + rnd() * 0.8, 0.9, 1.0);
         rk.castShadow = true; t.add(rk);
+      } else {                                          // saliente de roca de fondo
+        const sh = lensShape(-2.5, 2.5, -0.4, 1.5, 0.4);
+        extrudeZ(t, sh, -1, 2, rock);
+        cyl(t, rock, -2.2, 0.8, -0.7, 0.45, 1.8);
+        cyl(t, rock, 2.2, 0.8, -0.7, 0.45, 1.8);
       }
     }
+    // Hierba 3D en la franja de terreno cercana a la pista
+    addGrass(g, [
+      { x0, x1, z0: LANE_Z - 2.6, z1: LANE_Z - 0.3, y: (x) => H(x, 1.4) },
+      { x0, x1, z0: LANE_Z - 7, z1: LANE_Z - 2.6, y: (x) => H(x, 4.8) },
+    ], 1.4, rnd, true);
   } else if (kind === 'industrial') {
     const side = std(0x4a5560, 0.7), roof = std(0x2b323a, 0.8), steel = std(0x7f8b96, 0.45, 0.7);
     const tank = std(0x9aa7b2, 0.4, 0.6), pipeM = std(0x6e7c88, 0.35, 0.8);
     const glowM = new THREE.MeshStandardMaterial({ color: 0xffb74d, emissive: 0xff9800, emissiveIntensity: 0.9 });
+    const containerCols = [0xc0392b, 0x2e86c1, 0x27ae60, 0xf1c40f];
     for (const sp of spots) {
       const y = H(sp.x, sp.d), r = rnd(), zb = LANE_Z - sp.d;
-      if (r < 0.5) {                                    // nave con ventanas y chimenea
+      if (r < 0.4) {                                    // nave con ventanas y chimenea
         const w = 6 + rnd() * 6, h = 7 + rnd() * 12, dp = 5 + rnd() * 3;
         const win = new THREE.MeshStandardMaterial({ map: tiled(T.leaf, w / 4, h / 4), roughness: 0.6, emissive: 0x2a1600, emissiveIntensity: 0.25 });
         addBox(g, [side, side, roof, side, win, side], sp.x, y + h / 2, zb, w, h, dp);
@@ -716,20 +874,33 @@ function buildBackdrop(lv, zone, T, g) {
           cyl(g, steel, cxp, y + h + top / 2, zb, 0.5, top);
           chimneys.push({ x: cxp, y: y + h + top + 0.4, z: zb });
         }
-      } else if (r < 0.7) {                             // depósito cilíndrico
+      } else if (r < 0.52) {                            // grúa con cable y gancho
+        addBox(g, steel, sp.x, y + 7, zb, 0.6, 14, 0.6);
+        addBox(g, steel, sp.x + 4, y + 13.5, zb, 12, 0.5, 0.5);
+        addBox(g, steel, sp.x + 9, y + 9, zb, 0.04, 9, 0.04);
+        sph(g, glowM, sp.x + 9, y + 4.2, zb, 0.25);
+      } else if (r < 0.66) {                            // depósito cilíndrico
         cyl(g, tank, sp.x, y + 2.5, zb, 2.2, 5);
         cyl(g, steel, sp.x, y + 5.1, zb, 2.25, 0.25);
-      } else if (r < 0.85) {                            // tubería sobre pilares
+      } else if (r < 0.78) {                            // tubería sobre pilares
         cyl(g, pipeM, sp.x + 6, y + 4.5, zb, 0.25, 12, true);
         addBox(g, steel, sp.x, y + 2.2, zb, 0.4, 4.4, 0.4);
         addBox(g, steel, sp.x + 12, y + 2.2, zb, 0.4, 4.4, 0.4);
         addBox(g, glowM, sp.x + 6, y + 4.8, zb + 0.3, 0.6, 0.2, 0.2);
+      } else if (r < 0.9) {                             // contenedores apilados
+        const c1 = containerCols[Math.floor(rnd() * 4)], c2 = containerCols[Math.floor(rnd() * 4)];
+        addBox(g, std(c1, 0.6), sp.x, y + 1.2, zb, 4, 2.4, 2.4);
+        if (rnd() < 0.5) addBox(g, std(c2, 0.6), sp.x + 0.5, y + 3.6, zb, 3.4, 2.4, 2.4);
+      } else {                                          // farola con brillo
+        cyl(g, steel, sp.x, y + 2.2, zb, 0.08, 4.4);
+        sph(g, new THREE.MeshBasicMaterial({ color: zone.accent }), sp.x, y + 4.5, zb, 0.2);
       }
     }
   } else {
     const rock = new THREE.MeshStandardMaterial({ map: tiled(T.plank, 1, 1), roughness: 0.9 });
     const leaf = new THREE.MeshStandardMaterial({ map: tiled(T.leaf, 2, 2), roughness: 0.85 });
     const trunk = new THREE.MeshStandardMaterial({ map: tiled(T.bark, 1, 2), roughness: 0.9 });
+    const wood = std(0x7a5230, 0.8);
     let palms = 0;
     for (const sp of spots) {
       const y = H(sp.x, sp.d), r = rnd();
@@ -742,10 +913,17 @@ function buildBackdrop(lv, zone, T, g) {
           const fr = sph(t, leaf, Math.cos(a) * 1.1, 4.2, Math.sin(a) * 0.5, 1.4, 0.16, 0.42);
           fr.rotation.y = -a; fr.rotation.z = 0.35;
         }
+      } else if (r < 0.3) {                             // muelle de madera sobre pilares
+        const dk = addBox(g, wood, sp.x, Math.max(y, -1.2) + 0.3, LANE_Z - sp.d, 9, 0.3, 2.4);
+        for (let k = -1; k <= 1; k++) cyl(g, wood, sp.x + k * 3.5, (y - 4) / 2, LANE_Z - sp.d, 0.22, y + 4);
+        dk.castShadow = true;
       } else if (r < 0.5) {                             // roca de fondo marino
         const rk = new THREE.Mesh(UNIT_ROCK, rock);
         rk.position.set(sp.x, -1.5 + y, LANE_Z - sp.d); rk.scale.setScalar(1.5 + rnd() * 2);
         rk.castShadow = true; g.add(rk);
+      } else if (r < 0.62) {                            // arco natural sobre el agua
+        const sh = lensShape(sp.x - 4, sp.x + 4, Math.min(y, -0.5) - 0.8, 2.2, 0.8);
+        extrudeZ(g, sh, LANE_Z - sp.d - 1.5, 3, rock);
       }
     }
   }
@@ -806,18 +984,35 @@ function buildEnemy(e, zone) {
   return eg;
 }
 
+// Engranaje: disco con dientes en el plano XY (gira alrededor de z)
+function buildGear(mat) {
+  const gear = new THREE.Group();
+  const disc = new THREE.Mesh(UNIT_CYL, mat);
+  disc.scale.set(0.62, 0.3, 0.62); disc.rotation.x = Math.PI / 2;
+  gear.add(disc);
+  for (let k = 0; k < 10; k++) {
+    const th = (k / 10) * Math.PI * 2;
+    addBox(gear, mat, Math.cos(th) * 0.7, Math.sin(th) * 0.7, 0, 0.22, 0.22, 0.3).rotation.z = th;
+  }
+  return gear;
+}
+
 function buildVisuals(lv, zone) {
   const g = new THREE.Group();
   const T = zoneTex(lv.zoneIdx);
   const S = lv.solids;
+  const kind = zone.decor;
   const accent = new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 0.35, roughness: 0.4 });
   const springTop = std(0xffe53b, 0.35);
   const ringM = new THREE.MeshStandardMaterial({ color: 0xffd23f, metalness: 1, roughness: 0.18, emissive: 0x3a2a00 });
-  const postM = zone.decor === 'green' ? std(0x7a5230, 0.8) : std(0x8a949c, 0.4, 0.7);
-  const padGlow = new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 1.2 });
+  const steelM = std(0x8a949c, 0.4, 0.7);
+  const postM = kind === 'green' ? std(0x7a5230, 0.8) : steelM;
+  const rockM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, 1, 1), roughness: 0.95 });
+  const ropeM = std(0xc9a46a, 0.9);
+  const grassSurfs = [];
 
   lv.smoke = [];
-  if (zone.decor === 'industrial') {
+  if (kind === 'industrial') {
     const smokeMat = new THREE.SpriteMaterial({ map: T.blob, color: 0xb9c0c6, transparent: true, opacity: 0.55, depthWrite: false });
     for (let i = 0; i < 12; i++) {
       const s = new THREE.Sprite(smokeMat.clone());
@@ -832,32 +1027,84 @@ function buildVisuals(lv, zone) {
       const w = s.x1 - s.x0, top = s.y1, cx = (s.x0 + s.x1) / 2;
       const dirtM = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, w / 4, (top + 4) / 4), roughness: 0.95 });
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.grass, w / 4, 0.25), roughness: 0.85 });
-      const topM = new THREE.MeshStandardMaterial({ map: tiled(T.grass, w / 4, 1), roughness: 0.8 });
+      const topM = surfMat(T, T.grass, w, 4.4);
       addBox(g, dirtM, cx, (top - 4) / 2, 0, w, top + 4, 4);
       addBox(g, [sideM, sideM, topM, dirtM, sideM, sideM], cx, top - 0.25, 0, w, 0.5, 4.4);
+      if (s.boost) {                                    // franja de aceleración con flechas
+        const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
+        addBox(g, chev, cx, top + 0.03, 0, w, 0.06, 2.6);
+      } else if (kind === 'green') {
+        grassSurfs.push({ x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: () => top });
+      }
     } else if (s.kind === 'slope') {
       const dirtS = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, 0.25, 0.25), roughness: 0.95 });
-      const grassS = new THREE.MeshStandardMaterial({ map: tiled(T.grass, 0.25, 0.25), roughness: 0.8 });
+      const grassS = surfMat(T, T.grass, 4, 4, 0.8);
       prism(g, [[s.x0, -4], [s.x1, -4], [s.x1, s.yb], [s.x0, s.ya]], -2, 4, dirtS);
       prism(g, [[s.x0, s.ya], [s.x1, s.yb], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2.2, 4.4, grassS);
+      if (kind === 'green') grassSurfs.push({ x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: (x) => slopeAt(s, x) });
     } else if (s.kind === 'spring') {
       const red = new THREE.MeshStandardMaterial({ map: T.plank, color: 0xff6b6b, roughness: 0.4 });
       s.mesh = addBox(g, [red, red, springTop, red, red, red], (s.x0 + s.x1) / 2, s.y0 + 0.3, 0, s.x1 - s.x0, 0.6, 1.4);
-    } else {                                          // plataforma
+    } else if (s.kind === 'ceiling') {                  // saliente de roca sobre la pista
+      extrudeZ(g, lensShape(s.x0, s.x1, s.base + 2.8, 1.2, 0.8), -1.4, 2.8, rockM);
+      // Pilares de roca detrás de la pista (no bloquean el paso)
+      for (const px of [s.x0 - 0.4, s.x1 + 0.4]) {
+        const pil = new THREE.Mesh(UNIT_ROCK, rockM);
+        pil.position.set(px, s.base + 1.5, -1.9); pil.scale.set(0.9, 3.0, 0.9); pil.castShadow = true;
+        g.add(pil);
+      }
+    } else {                                           // plataforma
       const w = s.x1 - s.x0, h = s.y1 - s.y0, cx = (s.x0 + s.x1) / 2;
-      const side = new THREE.MeshStandardMaterial({ map: tiled(T.plank, w / 3, h / 3), roughness: 0.65 });
-      const top = new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.55 });
-      const mat = [side, side, top, side, side, side];
       if (s.mover) {
-        s.mesh = addBox(g, mat, s.cx, (s.y0 + s.y1) / 2, 0, s.w, h, 2.4);
-        s.glow = addBox(g, padGlow, s.cx, s.y0 - 0.12, 0, s.w * 0.8, 0.06, 2.0);
-      } else {
-        addBox(g, mat, cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
-        // Pilares de apoyo hasta el suelo
-        for (const px of [s.x0 + 0.7, s.x1 - 0.7]) addBox(g, postM, px, (s.y0 - 4) / 2, 0, 0.45, s.y0 + 4, 0.45);
+        if (kind === 'industrial') {                   // cinta con engranajes en los extremos
+          const track = std(0x3a4148, 0.6, 0.6);
+          addBox(g, track, s.base, s.y0 - 0.55, 0, s.amp * 2 + 5.4, 0.25, 1.4);
+          const gl = buildGear(steelM), gr = buildGear(steelM);
+          gl.position.set(s.base - s.amp - 2.7, s.y0 - 0.55, 0); gr.position.set(s.base + s.amp + 2.7, s.y0 - 0.55, 0);
+          g.add(gl, gr); s.gears = [gl, gr];
+          const topM = new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.55 });
+          s.mesh = addBox(g, [steelM, steelM, topM, steelM, steelM, steelM], s.cx, (s.y0 + s.y1) / 2, 0, s.w, h, 2.4);
+        } else {                                      // madera (verde) o balsa (acuática)
+          const woodM = kind === 'green' ? std(0xa8743a, 0.8) : std(0x8c6e4e, 0.8);
+          s.mesh = addBox(g, woodM, s.cx, (s.y0 + s.y1) / 2, 0, s.w, h, 2.4);
+          s.glow = addBox(g, new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 1.2 }), s.cx, s.y0 - 0.12, 0, s.w * 0.8, 0.06, 2.0);
+        }
+      } else if (kind === 'industrial') {               // acero con pilares y remaches
+        const side = new THREE.MeshStandardMaterial({ map: tiled(T.plank, w / 3, h / 3), roughness: 0.65 });
+        const top = new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.55 });
+        addBox(g, [side, side, top, side, side, side], cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
+        for (const px of [s.x0 + 0.7, s.x1 - 0.7]) {
+          addBox(g, steelM, px, (s.y0 - 4) / 2, 0, 0.45, s.y0 + 4, 0.45);
+          sph(g, std(0x5b6670, 0.4, 0.8), px, s.y0 - 0.6, 0.25, 0.05);
+        }
+      } else {                                          // roca natural con hierba (verde) o arena (acuática)
+        const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, w / 3, h / 3), roughness: 0.9 });
+        const topM = kind === 'green' ? surfMat(T, T.grass, w, 2.6) : new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.8 });
+        addBox(g, [sideM, sideM, topM, sideM, sideM, sideM], cx, (s.y0 + s.y1) / 2, 0, w, h, 2.6);
+        // Base de roca que se funde con el paisaje
+        const stalk = new THREE.Mesh(UNIT_ROCK, rockM);
+        stalk.position.set(cx, s.y0 - 1.1, 0); stalk.scale.set(w * 0.42, 2.0, 1.6); stalk.castShadow = true;
+        g.add(stalk);
+        if (kind === 'green') grassSurfs.push({ x0: s.x0, x1: s.x1, z0: -1.1, z1: 1.1, y: () => s.y1 });
+      }
+      if (s.bridge) {                                   // puente con cuerdas o barandillas
+        const yR = s.y1 + 1.1;
+        if (kind === 'industrial') {
+          addBox(g, steelM, cx, yR - 0.5, 1.2, w, 0.08, 0.08);
+          addBox(g, steelM, cx, yR - 0.5, -1.2, w, 0.08, 0.08);
+        } else {
+          const curve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(s.x0 + 0.6, yR, 1.2), new THREE.Vector3(cx, s.y1 + 0.4, 1.2), new THREE.Vector3(s.x1 - 0.6, yR, 1.2),
+          ]);
+          g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.045, 6), ropeM));
+        }
+        for (const px of [s.x0 + 0.6, s.x1 - 0.6]) addBox(g, postM, px, s.y1 + 0.55, 1.2, 0.14, 1.1, 0.14);
       }
     }
   }
+
+  // Hierba 3D sobre las superficies de la zona verde
+  if (grassSurfs.length) addGrass(g, grassSurfs, 4, mulberry32(lv.n * 17 + 3), true);
 
   // Anillos: InstancedMesh (una llamada de dibujo para todos)
   lv.ringMesh = new THREE.InstancedMesh(RING_GEO, ringM, Math.max(1, lv.rings.length));
@@ -1041,12 +1288,12 @@ function resolveX(p, solids, prevX) {
   const top = p.y + PH / 2, bottom = p.y - PH / 2;
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
-    if (s.kind === 'platform') continue;                // una cara: no bloquea lateralmente
+    if (s.kind === 'platform' || s.kind === 'ceiling') continue;   // una cara o solo techo: no bloquean de lado
     if (top <= s.y0 + EPS || bottom >= s.y1 - EPS) continue;
     if (right <= s.x0 || left >= s.x1) continue;
     if (s.kind === 'slope') {
-      // Una pared demasiado empinada detiene al jugador
-      if (bottom < slopeMax(s, p) - 0.3) { p.x = prevX; p.vx = 0; p.dashT = 0; p.charge = 0; }
+      // Una pared muy empinada detiene al jugador; un escalón de hasta 1.2 se sube
+      if (bottom < slopeMax(s, p) - 1.2) { p.x = prevX; p.vx = 0; p.dashT = 0; p.charge = 0; }
       continue;
     }
     if (s.kind === 'spring') {
@@ -1066,13 +1313,20 @@ function resolveY(p, solids, prevBottom) {
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
     if (right <= s.x0 || left >= s.x1) continue;
+    if (s.kind === 'ceiling') {
+      // Bajo un saliente: el salto se corta al chocar con la roca
+      if (p.vy > 0 && prevBottom + PH <= s.y0 + 0.02 && p.y + PH / 2 > s.y0) { p.y = s.y0 - PH / 2; p.vy = 0; }
+      continue;
+    }
     const bottom = p.y - PH / 2;
     const slope = s.kind === 'slope';
     const surf = slope ? slopeMax(s, p) : s.y1;
     const tol = slope ? 0.3 : 0.02;   // en rampas se "pega" al bajar
     const reach = slope ? 0.3 : 0;
-    // Aterriza sólo si los pies estaban por encima de la superficie en el paso anterior
-    if (p.vy <= 0 && prevBottom >= surf - tol && bottom < surf + reach) {
+    // Aterriza sólo si los pies estaban por encima de la superficie en el paso anterior;
+    // en rampas también sube al jugador si ha entrado de lado por debajo de la superficie
+    const inside = slope && p.vy <= 0 && bottom < surf && bottom > surf - 1.2;
+    if ((p.vy <= 0 && prevBottom >= surf - tol && bottom < surf + reach) || inside) {
       p.y = surf + PH / 2;
       p.vy = 0; p.grounded = true; p.groundSolid = s;
       if (s.kind === 'spring') {
@@ -1141,6 +1395,11 @@ function stepPlayer(dt) {
   p.y += p.vy * dt;
   resolveY(p, lv.solids, prevBottom);
   if (p.grounded) p.spinAir = false;
+
+  // Franja de aceleración: empuja hacia delante mientras estés encima
+  if (p.grounded && p.groundSolid && p.groundSolid.boost && (p.vx > 0 || ax > 0.1)) {
+    p.vx = Math.max(p.vx, BOOST_V);
+  }
 }
 
 /* ============================================================
@@ -1295,9 +1554,16 @@ function updateVisuals(t, dt) {
   else { P.air = 0; P.spin.rotation.z = 0; }
   animatePlayer(t, dt);
 
-  // Plataformas móviles y muelles
+  // Plataformas móviles, engranajes y muelles
   for (const s of lv.solids) {
-    if (s.mover) { s.mesh.position.x = s.cx; s.glow.position.x = s.cx; }
+    if (s.mover) {
+      s.mesh.position.x = s.cx;
+      if (s.glow) s.glow.position.x = s.cx;
+      if (s.gears) {
+        const turn = -(s.cx - s.base) / 0.7;
+        s.gears.forEach((gr) => (gr.rotation.z = turn));
+      }
+    }
     if (s.kind === 'spring' && s.mesh) {
       s.squash = Math.max(0, s.squash - dt);
       const k = s.squash > 0 ? 0.6 : 1;
