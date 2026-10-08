@@ -443,6 +443,9 @@ export function buildLevel(zi, ai) {
       case "hop": return { ...base, type, cd: 0.5 + r() * 1.5, air: false, yv: 0, hv: 0 };
       case "spiny": return { ...base, type, spiky: true, speed: 1.6 + r() * 0.6 };
       case "shoot": return { type, x: ex, minX: ex, maxX: ex, dir: -1, speed: 0, y, cd: 1 + r() * 1.5, phase: 0, alive: true, inv: 0, r: 0.5 };
+      case "housefly": return { ...base, type, ax: ex, minX: ex - 5, maxX: ex + 5, speed: 2.2 + r() * 0.8, base: y + 1.1 + r() * 0.5, y: y + 1.4, r: 0.4 };
+      case "worm": return { ...base, type, up: 0, st: "hide", t: 0.5 + r() * 2.5, base: y };
+      case "beetle": return { ...base, type, speed: 2.4 + r() * 0.8 };
       default: return base;
     }
   };
@@ -457,8 +460,10 @@ export function buildLevel(zi, ai) {
     const cEnd = Math.min(c + 100, stopX);
     for (let tries = 0, have = lv.enemies.filter((e) => e.x >= c && e.x < cEnd).length; have < 2 && tries < 80; tries++) {
       const ex = c + (cEnd - c) * rng();
-      const type = pickWeighted({ walk: 4, fly: prof.fly * 6, wasp: prof.wasp * 5, hop: prof.hop * 8, spiny: prof.spiny * 8, shoot: prof.shoot * 8 }, rng);
-      const flying = type === "fly" || type === "wasp";
+      // Bichos de cada zona: gusanos y escarabajos en la verde, escarabajos en la industrial, moscas sobre el agua
+      const bugs = { worm: zi === 0 ? 4 : 0, beetle: zi === 1 ? 5 : zi === 0 ? 3 : 0, housefly: zi === 2 ? 4 : 2 };
+      const type = pickWeighted({ walk: 4, fly: prof.fly * 6, wasp: prof.wasp * 5, hop: prof.hop * 8, spiny: prof.spiny * 8, shoot: prof.shoot * 8, ...bugs }, rng);
+      const flying = type === "fly" || type === "wasp" || type === "housefly";
       const s = flat.find((q) => ex >= q.x0 + 3 && ex <= q.x1 - 3);
       if (!flying && !s) continue;
       if (type === "shoot" && (!s || ex - s.x0 < 16)) continue;

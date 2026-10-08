@@ -1,6 +1,6 @@
 // Pista: suelo, rampas, muelles, piedras, salientes, plataformas, puentes, hierba, tubos, señales y galerías
 import * as THREE from 'three';
-import { FILE, tiled } from './textures.js';
+import { FILE, canvasTex, tiled } from './textures.js';
 import { mulberry32 } from './util.js';
 import { BLADE_GEO, CUT_PLANES, ROCK_GEO, UNIT_CONE, UNIT_CYL, UNIT_SPHERE, addBox, cyl, extrudeZ, instanced, lensShape, mesh, prism } from './geo.js';
 import { laneY, pathAt, slopeAt, TUBE_R } from './level.js';
@@ -160,15 +160,48 @@ function buildGallery(gl, T, zi, chunkOf) {
   for (const f of [0.3, 0.7]) mesh(G, UNIT_SPHERE, lampM, inX0 + span * f, gl.yF + 2.6, -1.7, 0.22).castShadow = false;
 }
 
-// Aro de roca alrededor de un bucle: un toro con la textura de la zona, abierto por abajo (ahí entra y sale la pista)
+// Arco de cuadros detrás de cada bucle: una pared con un agujero circular por donde pasa el lazo y una abertura
+// abajo, por donde entra y sale la pista. El borde inferior queda a la altura del tubo, así que la pista pasa bajo él.
+const CHECK_HEX = [[0x8d6a43, 0xc9a66b], [0x4a5058, 0x6e7782], [0xb89c6c, 0xe6d3a4]];   // dos tonos de cuadros por zona
+const RIM_HEX = [0x4f9a35, 0x3b4149, 0x7d6a58];                                          // canto: hierba, acero o roca
+const ARCH_Z = -2.75, ARCH_D = 0.9;     // la pared va detrás del tubo (que llega hasta z = -1.6)
+const checkers = new Map();
+function checkerTex(zi) {
+  if (!checkers.has(zi)) {
+    const [a, b] = CHECK_HEX[zi];
+    const t = canvasTex(128, (g, s) => {
+      g.fillStyle = `#${a.toString(16).padStart(6, '0')}`; g.fillRect(0, 0, s, s);
+      g.fillStyle = `#${b.toString(16).padStart(6, '0')}`; g.fillRect(0, 0, s / 2, s / 2); g.fillRect(s / 2, s / 2, s / 2, s / 2);
+    });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(0.5, 0.5);                           // un cuadro cada unidad
+    checkers.set(zi, t);
+  }
+  return checkers.get(zi);
+}
 function buildLoopFrame(pt, zi, T, G) {
-  const { cx, cy, R, gap } = pt.loop;
-  const geo = new THREE.TorusGeometry(R + TUBE_R + 0.35, 0.55, 12, 80, Math.PI * 2 - gap);
-  const mat = new THREE.MeshStandardMaterial({ map: tiled(zi === 1 ? T.plank : T.side, 6, 1), roughness: 0.9 });
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(cx, cy, 0);
-  m.rotation.z = -Math.PI / 2 + gap / 2;             // la abertura queda abajo
+  const { cx, cy, R } = pt.loop;
+  const Ri = R + TUBE_R + 0.25, Ro = Ri + 1.7;          // radio del agujero y de la pared (relativos al centro del bucle)
+  const dy = TUBE_R - R;                                 // borde inferior: a la altura del tubo, sobre la pista
+  const ao = Math.asin(dy / Ro), ai = Math.asin(dy / Ri);
+  const shape = new THREE.Shape();
+  shape.moveTo(Ro * Math.cos(ao), Ro * Math.sin(ao));
+  shape.absarc(0, 0, Ro, ao, Math.PI - ao, false);      // arco exterior, por arriba
+  shape.lineTo(-Ri * Math.cos(ai), Ri * Math.sin(ai));
+  shape.absarc(0, 0, Ri, Math.PI - ai, ai, true);       // arco interior (el agujero), de vuelta
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: ARCH_D - 0.3, bevelEnabled: true, bevelThickness: 0.15, bevelSize: 0.15, bevelSegments: 2, curveSegments: 72,
+  });
+  const cap = new THREE.MeshStandardMaterial({ map: checkerTex(zi), roughness: 0.9 });
+  const rim = new THREE.MeshStandardMaterial({ color: RIM_HEX[zi], roughness: 0.9 });
+  const m = new THREE.Mesh(geo, [cap, rim]);
+  m.position.set(cx, cy, ARCH_Z + 0.15);                 // el bisel asoma 0.15 por delante y por detrás
+  m.receiveShadow = true;
   G.add(m);
+  // Dos pies bajo los extremos del arco, hasta el suelo, para que no flote sobre la pista
+  const yb = pt.y0 + TUBE_R, yFoot = pt.y0 - 4, legX = (Ro * Math.cos(ao) + Ri * Math.cos(ai)) / 2, legW = Ro * Math.cos(ao) - Ri * Math.cos(ai);
+  for (const sgn of [-1, 1]) addBox(G, rim, cx + sgn * legX, (yFoot + yb) / 2, ARCH_Z + ARCH_D / 2, legW, yb - yFoot, ARCH_D);
 }
 
 // Construye la pista en los grupos de cada tramo (chunkOf devuelve el grupo de una coordenada x)

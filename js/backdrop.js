@@ -4,6 +4,7 @@ import { CHUNK, LUMP_GEO, ROCK_GEO, UNIT_BOX, UNIT_CONE, UNIT_CYL, UNIT_SPHERE, 
 import { addGrass } from './lane.js';
 import { laneY } from './level.js';
 import { FILE } from './textures.js';
+import { MODELS } from './models.js';
 import { mulberry32, pickWeighted, smooth, vnoise } from './util.js';
 
 export const ACCENT = [0xffd24a, 0xff9800, 0x00e5ff];
@@ -54,7 +55,7 @@ const LANE_Z = -2.2;            // borde trasero de la pista
 const BD_ROWS = [0, 0.4, 0.9, 1.5, 2.2, 3, 4, 5.2, 6.6, 8.2, 10, 12, 14.5, 17, 20, 24, 28, 33, 39, 46, 54, 63, 73, 84, 96];
 
 // Altura del terreno de fondo a distancia d: continúa la pista y se eleva en colinas, se mantiene plano o baja al mar
-export function bgHeight(kind, lane, x, d) {
+function bgBase(kind, lane, x, d) {
   let h = lane * Math.exp(-d / 4);
   if (kind === 'green') {
     h += 5 * smooth(3, 18, d) * (Math.sin(x * 0.045 + d * 0.09) * 0.6 + Math.sin(x * 0.11 - d * 0.13 + 1.3) * 0.4);
@@ -65,6 +66,19 @@ export function bgHeight(kind, lane, x, d) {
     h += 6 * smooth(12, 22, d) * Math.max(0, Math.sin(x * 0.07 + d * 0.05) * Math.sin(x * 0.031 - d * 0.04));
   }
   return h;
+}
+
+// Río de fondo (zona verde): serpentea a distancia riverD(x). El cauce es un valle en V y el agua va a nivel del
+// cauce, así que solo se ve donde el terreno queda por debajo. Caminos: serpentean a distancia roadD(x)
+export const riverD = (x) => 19 + 3.5 * Math.sin(x * 0.017 + 1.9) + 1.2 * Math.sin(x * 0.047);
+export const roadD = (x) => 8.4 + 1.6 * Math.sin(x * 0.021 + 0.7) + 0.8 * Math.sin(x * 0.058 + 2.1);
+const riverY = (kind, lane, x) => bgBase(kind, lane, x, riverD(x)) - 0.6;
+
+// Altura del terreno de fondo: el relieve de bgBase con el valle del río
+export function bgHeight(kind, lane, x, d) {
+  const h = bgBase(kind, lane, x, d);
+  if (kind !== 'green') return h;
+  return Math.min(h, riverY(kind, lane, x) - 1.1 + 0.6 * Math.abs(d - riverD(x)));
 }
 
 // Terreno: una malla por tramo de CHUNK, con colores que se oscurecen con la distancia
@@ -96,6 +110,66 @@ function terrainChunk(chunkOf, c, S, kind, mat, X0, X1) {
   m.receiveShadow = true;
   chunkOf(c * CHUNK + 1).add(m);
   return { xs, lanes };
+}
+
+// Cinta horizontal: pares de puntos (borde cercano, borde lejano) a lo largo de x; el lado cercano va primero
+function ribbon(pairs) {
+  const pos = [], idx = [];
+  for (const [a, b] of pairs) pos.push(...a, ...b);
+  for (let i = 0; i < pairs.length - 1; i++) { const a = 2 * i, b = a + 1, c = a + 2, e = a + 3; idx.push(a, c, b, b, c, e); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Camino que serpentea por el terreno de fondo (verde e industrial), a la altura del terreno
+function roadMesh(kind, S, X0, X1, color) {
+  const pairs = [];
+  for (let x = X0; x <= X1; x += 1.5) {
+    const lane = laneY(S, x), d = roadD(x), w = 1.1;
+    pairs.push([[x, bgHeight(kind, lane, x, d - w) + 0.14, LANE_Z - (d - w)], [x, bgHeight(kind, lane, x, d + w) + 0.14, LANE_Z - (d + w)]]);
+  }
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2 });
+  return new THREE.Mesh(ribbon(pairs), m);
+}
+
+// Río de fondo: el agua va a nivel del cauce; el terreno de los bordes la tapa donde sube
+function riverMesh(S, X0, X1) {
+  const pairs = [];
+  for (let x = X0; x <= X1; x += 1.5) {
+    const y = riverY('green', laneY(S, x), x), d = riverD(x), w = 2.2;
+    pairs.push([[x, y + 0.02, LANE_Z - (d - w)], [x, y + 0.02, LANE_Z - (d + w)]]);
+  }
+  const m = new THREE.MeshStandardMaterial({ color: 0x3c9bd6, roughness: 0.12, metalness: 0.05, transparent: true, opacity: 0.9, depthWrite: false });
+  return new THREE.Mesh(ribbon(pairs), m);
+}
+
+// Piezas de un modelo de Blender del fondo (si cargó): una malla por pieza, horneada en coordenadas del modelo
+const BAKED = new Map();
+function glbPieces(name) {
+  if (!BAKED.has(name)) {
+    const list = [];
+    const src = MODELS[name];
+    if (src) {
+      src.updateMatrixWorld(true);
+      src.traverse((o) => {
+        if (o.isMesh) list.push({ geo: o.geometry.clone().applyMatrix4(o.matrixWorld), mat: o.material, leaf: /leaf|foliage|crown/i.test(o.material.name) });
+      });
+    }
+    BAKED.set(name, list.length ? list : null);
+  }
+  return BAKED.get(name);
+}
+// Dibuja un objeto de fondo con su modelo de Blender; devuelve false si el modelo no cargó (se usa la figura de respaldo)
+function glbDec(B, name, o) {
+  const pieces = glbPieces(name);
+  if (!pieces) return false;
+  pieces.forEach((p, i) => B.put(o.x, `${name}${i}`, p.geo, p.mat, {
+    x: o.x, y: o.y, z: o.z, sx: o.s, ry: o.ry, color: p.leaf ? o.col : undefined,
+  }));
+  return true;
 }
 
 // Cordillera: columnas con altura de crestas (ruido de valor invertido) y color por altitud
@@ -165,18 +239,21 @@ const piece = (B, key, geo, mat, o, ox, oy, oz, sx, sy, sz, color, rot) => {
 
 // Tipos de decoración. o = { x, y, z, s, col } (base en el terreno, escala y tinte)
 const DEC = {
-  tree(B, o, M) {                                       // árbol redondo: tronco visible y copa irregular
+  tree(B, o, M, rng) {                                  // árbol redondo: tronco visible y copa irregular
+    if (glbDec(B, rng() < 0.5 ? 'tree_oak' : 'tree_birch', o)) return;
     piece(B, 'trunk', UNIT_CYL, M.bark, o, 0, 1.5, 0, 0.24, 3.0, 0.24);
     const crown = [[0, 3.5, 0, 1.25], [-0.95, 3.0, 0.25, 0.95], [0.95, 3.15, -0.2, 1.0], [0.05, 4.6, 0.15, 0.95], [-0.35, 2.9, -0.7, 0.8], [0.6, 2.75, 0.7, 0.75]];
     for (const [ox, oy, oz, r] of crown) piece(B, 'crown', LUMP_GEO, M.leaf, o, ox, oy, oz, r, r * 0.9, r, o.col);
   },
   pine(B, o, M) {                                       // pino: tronco visible y tres pisos de conos
+    if (glbDec(B, 'tree_pine', o)) return;
     piece(B, 'trunk', UNIT_CYL, M.bark, o, 0, 1.0, 0, 0.17, 2.0, 0.17);
     piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 2.2, 0, 1.6, 2.0, 1.6, o.col);
     piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 3.3, 0, 1.25, 1.8, 1.25, o.col);
     piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 4.3, 0, 0.8, 1.6, 0.8, o.col);
   },
   bush(B, o, M) {
+    if (glbDec(B, 'bush', o)) return;
     piece(B, 'crown', LUMP_GEO, M.leaf, o, 0, 0.6, 0, 1.0, 0.7, 0.9, o.col);
     piece(B, 'crown', LUMP_GEO, M.leaf, o, 1.0, 0.45, 0.4, 0.7, 0.5, 0.6, o.col);
     piece(B, 'crown', LUMP_GEO, M.leaf, o, -0.9, 0.45, -0.2, 0.75, 0.55, 0.7, o.col);
@@ -197,6 +274,7 @@ const DEC = {
     piece(B, 'dark', UNIT_SPHERE, M.white, o, 0.1, 0.8, 0.12, 0.05);
   },
   rock(B, o, M, rng) {                                  // roca medio enterrada, de forma irregular
+    if (glbDec(B, rng() < 0.5 ? 'rock_a' : 'rock_b', o)) return;
     piece(B, 'rock', ROCK_GEO, M.rock, o, 0, 0.3, 0, 1.0 + rng() * 0.9, 0.6 + rng() * 0.5, 0.9 + rng() * 0.5, o.rockCol);
   },
   arch(B, o, M, rng, ctx) {
@@ -244,6 +322,7 @@ const DEC = {
   },
   // Acuática
   palm(B, o, M) {
+    if (glbDec(B, 'tree_palm', o)) return;
     piece(B, 'trunk', UNIT_CYL, M.trunk, o, 0, 2.0, 0, 0.16, 4, 0.16);
     for (let k = 0; k < 6; k++) {
       const a = (k / 6) * Math.PI * 2;
@@ -305,6 +384,8 @@ export function buildBackdrop(lv, zi, ai, T, chunkOf, root) {
     if (r) surfacesByChunk.push({ c, ...r });
   }
   const H = (x, d) => bgHeight(kind, laneY(S, x), x, d);
+  if (zi < 2) root.add(roadMesh(kind, S, X0, X1, zi === 0 ? 0xb8925c : 0x5d636b));   // camino de fondo (tierra o asfalto)
+  if (zi === 0) root.add(riverMesh(S, X0, X1));                                          // río de fondo
 
   // Hierba 3D en la franja de terreno cercana a la pista (zona verde)
   if (zi === 0) {
@@ -352,9 +433,11 @@ export function buildBackdrop(lv, zi, ai, T, chunkOf, root) {
     const k = pickWeighted(look.decor, rng);
     if (k === 'palm' && y < -1.2) return;            // las palmeras solo crecen sobre tierra
     if (k === 'island' && y > 1.5) return;
+    if (zi === 0 && Math.abs(d - riverD(x)) < 2.4) return;   // nada en medio del río
+    if (zi < 2 && Math.abs(d - roadD(x)) < 1.8) return;      // ni en medio del camino
     if (BIG.has(k) && d < 14) return place(x, 14 + rng() * 36);   // edificios y grúas: lejos, no tapan la pista
     const o = {
-      x, y, z: LANE_Z - d, s: 0.8 + rng() * 0.7,
+      x, y, z: LANE_Z - d, s: 0.8 + rng() * 0.7, ry: rng() * Math.PI * 2,
       col: new THREE.Color().setHSL(0.27 + (rng() - 0.5) * 0.1, 0.45 + rng() * 0.25, 0.55 + rng() * 0.2).getHex(),
       capCol: [0xd7262b, 0xffb300, 0x8e6cf0, 0xf5f5f5][Math.floor(rng() * 4)],
       rockCol: [0xffffff, 0xd8d0c4, 0xbdb5a8][Math.floor(rng() * 3)],
@@ -363,6 +446,12 @@ export function buildBackdrop(lv, zi, ai, T, chunkOf, root) {
   };
   for (let x = X0 + 2; x < X1; x += 2.8 + rng() * 3.6) place(x + (rng() - 0.5) * 2, 3 + rng() * 9);
   for (let x = X0 + 4; x < X1; x += 6 + rng() * 7) place(x, 14 + rng() * 36);
+  if (zi === 0) {                                    // arboledas lejanas: grupos de árboles juntos, como un bosque
+    for (let i = 0; i < 26; i++) {
+      const gx = X0 + rng() * (X1 - X0), gd = 16 + rng() * 26;
+      for (let k = 0; k < 5; k++) place(gx + (rng() - 0.5) * 9, gd + (rng() - 0.5) * 5);
+    }
+  }
   B.flush();
 
   // Humo de las chimeneas (industrial)

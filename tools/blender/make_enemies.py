@@ -1,4 +1,5 @@
-"""Modelos de los enemigos (drones, torretas, jefe, avispa, saltamontes, erizo y pez), hechos con Blender.
+"""Modelos de los enemigos (drones, torretas, jefe, avispa, saltamontes, erizo, pez, mosca, gusano y
+escarabajo) y del escenario (árboles, rocas y arbusto), hechos con Blender.
 
 Usa Blender como módulo de Python (bpy; probado con bpy 5.2 en Python 3.13):
     pip install bpy
@@ -41,13 +42,18 @@ def material(name, hex_color, metallic=0.2, roughness=0.5, glow=0.0):
     return mat
 
 
-def sphere(r, loc, mat, scale=(1, 1, 1)):
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=r, segments=24, ring_count=14, location=loc)
+def sphere(r, loc, mat, scale=(1, 1, 1), segments=24, rings=14):
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=r, segments=segments, ring_count=rings, location=loc)
     o = bpy.context.active_object
     o.scale = scale
     o.data.materials.append(mat)
     bpy.ops.object.shade_smooth()
     return o
+
+
+def blob(r, loc, mat, scale=(1, 1, 1)):
+    """Esfera de baja resolución (16 x 10) para los modelos nuevos."""
+    return sphere(r, loc, mat, scale, segments=16, rings=10)
 
 
 def cylinder(r, depth, loc, mat, rot=(0, 0, 0)):
@@ -87,6 +93,18 @@ def box(size, loc, mat, bevel=0.0):
         mod.width = bevel
         mod.segments = 2
         bpy.ops.object.modifier_apply(modifier=mod.name)
+    return o
+
+
+def flatten_bottom(o):
+    """Corta lo que queda bajo z = 0 y cierra la base con una cara plana."""
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.bisect(plane_co=(0, 0, 0), plane_no=(0, 0, 1), use_fill=True, clear_inner=True)
+    bpy.ops.object.mode_set(mode='OBJECT')
     return o
 
 
@@ -243,7 +261,165 @@ def build_fish():
     export('fish', objs)
 
 
+def build_housefly():
+    """Mosca doméstica: cuerpo oliva, ojos rojos que brillan y cuatro alas claras, centrada en el origen."""
+    clear()
+    body = material('body', '4a4f2a', metallic=0.0, roughness=0.5)
+    eye = material('eye', 'e0262b', metallic=0.1, roughness=0.3, glow=3.0)
+    wing = material('wing', 'e6eef5', metallic=0.0, roughness=0.1)
+    objs = [blob(0.22, (0, 0, 0), body, scale=(1.1, 0.85, 0.9)),
+            blob(0.13, (0.26, 0, 0.02), body)]
+    for s in (-1, 1):
+        objs.append(blob(0.1, (0.3, s * 0.09, 0.05), eye))
+        objs.append(blob(0.28, (-0.02, s * 0.2, 0.12), wing, scale=(1.1, 0.04, 0.55)))
+        back = blob(0.28, (-0.02, s * 0.2, 0.12), wing, scale=(1.1, 0.04, 0.55))
+        back.rotation_euler = (0, 0, s * 0.3)  # segundo par de alas, en el mismo sitio y abierto en V
+        objs.append(back)
+    export('housefly', objs)
+
+
+def build_worm():
+    """Gusano segmentado: cinco segmentos rosados, cabeza más oscura y dos ojos negros; mira a +X."""
+    clear()
+    skin = material('skin', 'e88a7a', metallic=0.0, roughness=0.6)
+    head = material('head', 'd46f60', metallic=0.0, roughness=0.5)
+    dark = material('dark', '1d1f26', metallic=0.2, roughness=0.4)
+    objs = [blob(0.22, (x, 0, 0.22), skin) for x in (-0.6, -0.3, 0.0, 0.3, 0.6)]
+    objs.append(blob(0.24, (0.75, 0, 0.24), head))
+    for s in (-1, 1):
+        objs.append(blob(0.05, (0.92, s * 0.09, 0.32), dark))
+    export('worm', objs)
+
+
+def build_beetle():
+    """Escarabajo: caparazón rojo abombado, cabeza negra, seis patas que tocan el suelo y cuatro manchas."""
+    clear()
+    shell = material('shell', 'c8321e', metallic=0.1, roughness=0.25)
+    dark = material('dark', '1d1f26', metallic=0.2, roughness=0.5)
+    objs = [blob(0.42, (0, 0, 0.42), shell, scale=(1.15, 0.95, 0.7)),
+            blob(0.18, (0.6, 0, 0.25), dark)]
+    # Tres pares de patas, cada una inclinada 40 grados hacia fuera. El centro se sube lo justo
+    # para que el pie quede en z = 0 (con z = 0.12 el pie se hundiría unos 0.09).
+    tilt = math.radians(40)
+    leg_z = 0.25 * math.cos(tilt) + 0.035 * math.sin(tilt)
+    for x in (-0.3, 0.0, 0.3):
+        for y in (-0.35, 0.35):
+            n = math.hypot(x, y)
+            objs.append(cylinder(0.035, 0.5, (x, y, leg_z), dark, rot=(0, tilt, math.atan2(-y / n, -x / n))))
+    for x, y in ((0.2, 0.16), (0.2, -0.16), (-0.2, 0.16), (-0.2, -0.16)):
+        z = 0.42 + 0.294 * math.sqrt(1 - (x / 0.483) ** 2 - (y / 0.399) ** 2)  # sobre la superficie
+        objs.append(blob(0.09, (x, y, z), dark))
+    export('beetle', objs)
+
+
+def build_tree_oak():
+    """Roble: tronco recto y copa ancha formada por seis bolas verdes en dos tonos."""
+    clear()
+    bark = material('bark', '6b4a2b', metallic=0.0, roughness=0.9)
+    leaf = material('leaf', '3f9a3c', metallic=0.0, roughness=0.8)
+    leaf_light = material('leaf_light', '5cb54a', metallic=0.0, roughness=0.8)
+    objs = [cylinder(0.22, 2.6, (0, 0, 1.3), bark)]
+    crown = ((0.0, 0.0, 4.3, 1.35), (-0.75, 0.25, 4.0, 1.15), (0.7, -0.2, 4.1, 1.2),
+             (0.1, 0.8, 4.4, 1.1), (-0.2, -0.75, 4.4, 1.1), (-0.2, -0.1, 3.7, 1.6))
+    for i, (x, y, z, r) in enumerate(crown):
+        objs.append(blob(r, (x, y, z), leaf if i % 2 == 0 else leaf_light))
+    export('tree_oak', objs)
+
+
+def build_tree_birch():
+    """Abedul: tronco blanco con marcas oscuras y copa alta de bolas amarillas y verdes."""
+    clear()
+    birch = material('birch', 'e9e6dc', metallic=0.0, roughness=0.6)
+    birch_dark = material('birch_dark', '2b2b2b', metallic=0.0, roughness=0.7)
+    leaf_yellow = material('leaf_yellow', 'b5d24a', metallic=0.0, roughness=0.8)
+    leaf_green = material('leaf_green', '8fc34a', metallic=0.0, roughness=0.8)
+    objs = [cylinder(0.16, 4.8, (0, 0, 2.4), birch)]
+    for z, a in ((0.5, 0.3), (1.1, 1.6), (1.7, 2.9), (2.3, 4.2), (2.9, 5.5)):
+        # placa pegada al tronco: el lado fino apunta hacia fuera y el largo sigue la curva
+        mark = box((0.22, 0.04, 0.14), (0.15 * math.cos(a), 0.15 * math.sin(a), z), birch_dark)
+        mark.rotation_euler = (0, 0, a - math.pi / 2)
+        objs.append(mark)
+    crown = ((0.0, 0.0, 4.4, 0.9), (0.55, 0.25, 4.25, 0.8), (-0.55, -0.2, 4.3, 0.85),
+             (0.25, -0.6, 4.55, 0.8), (-0.3, 0.6, 4.6, 0.8), (0.7, -0.15, 4.65, 0.8),
+             (-0.7, 0.15, 4.1, 0.8), (0.05, 0.35, 4.1, 0.8), (-0.15, -0.5, 4.2, 0.9))
+    for i, (x, y, z, r) in enumerate(crown):
+        objs.append(blob(r, (x, y, z), leaf_yellow if i % 2 == 0 else leaf_green, scale=(1, 1, 1.2)))
+    export('tree_birch', objs)
+
+
+def build_tree_palm():
+    """Palmera: tronco de seis tramos que se curva un poco hacia +X y siete frondes que caen desde la copa."""
+    clear()
+    trunk_m = material('palm_trunk', 'b58a4f', metallic=0.0, roughness=0.8)
+    frond_m = material('frond', '3fa34d', metallic=0.0, roughness=0.6)
+    objs = [cylinder(0.2, 0.9, (0.08 * i, 0, 0.45 + 0.8 * i), trunk_m) for i in range(6)]
+    crown = (0.5, 0.0, 5.0)
+    for k in range(7):
+        a = 2 * math.pi * k / 7 + 0.3  # acimut de la fronde
+        t = math.radians(25 + 4 * (k % 3))  # cuánto cae la fronde
+        d = (math.cos(t) * math.cos(a), math.cos(t) * math.sin(a), -math.sin(t))
+        frond = blob(0.9, tuple(c + 1.4 * v for c, v in zip(crown, d)), frond_m, scale=(1.7, 0.22, 0.22))
+        frond.rotation_euler = (0, t, a)
+        objs.append(frond)
+    export('tree_palm', objs)
+
+
+def build_tree_pine():
+    """Pino: tronco corto y cuatro pisos de conos verdes que se estrechan hacia arriba."""
+    clear()
+    bark = material('bark', '5a4030', metallic=0.0, roughness=0.9)
+    needle = material('needle', '2e6b3a', metallic=0.0, roughness=0.8)
+    objs = [cylinder(0.18, 2.2, (0, 0, 1.1), bark)]
+    for r, z in ((1.9, 2.4), (1.5, 3.4), (1.1, 4.4), (0.7, 5.3)):
+        objs.append(cone(r, 1.6, (0, 0, z), needle))
+    export('tree_pine', objs)
+
+
+def build_rock_a():
+    """Roca con base plana, dos piedras pequeñas a los lados y un parche de musgo arriba."""
+    clear()
+    stone = material('stone', '8b8782', metallic=0.0, roughness=0.9)
+    moss = material('moss', '4f7a3a', metallic=0.0, roughness=0.9)
+    objs = [flatten_bottom(blob(1.0, (0, 0, 0.5), stone, scale=(1.2, 0.9, 0.7))),
+            blob(0.45, (-0.8, 0.45, 0.45), stone),
+            blob(0.45, (0.75, -0.5, 0.45), stone),
+            blob(0.5, (-0.1, 0.05, 1.14), moss, scale=(1, 0.6, 0.25))]
+    export('rock_a', objs)
+
+
+def build_rock_b():
+    """Roca más alargada en Y y más baja, con otro tono de piedra y musgo arriba."""
+    clear()
+    stone = material('stone', '7a7c80', metallic=0.0, roughness=0.9)
+    moss = material('moss', '4f7a3a', metallic=0.0, roughness=0.9)
+    objs = [flatten_bottom(blob(1.0, (0, 0, 0.5), stone, scale=(0.8, 1.1, 0.6))),
+            blob(0.45, (0.6, 0.6, 0.45), stone),
+            blob(0.45, (-0.5, -0.65, 0.45), stone),
+            blob(0.5, (0.0, 0.0, 1.0), moss, scale=(1, 0.6, 0.25))]
+    export('rock_b', objs)
+
+
+def build_bush():
+    """Arbusto redondo de hojas verdes, con flores rosas y amarillas en la superficie."""
+    clear()
+    leaf = material('leaf', '3d8f3a', metallic=0.0, roughness=0.8)
+    pink = material('flower_pink', 'ff6fa0', metallic=0.0, roughness=0.5)
+    yellow = material('flower_yellow', 'ffd54a', metallic=0.0, roughness=0.5)
+    leaves = [((0.0, 0.0, 0.55), 0.55), ((0.3, 0.2, 0.55), 0.5), ((-0.3, -0.15, 0.55), 0.5),
+              ((-0.2, 0.3, 0.5), 0.5), ((0.25, -0.3, 0.5), 0.5)]
+    objs = [blob(r, c, leaf) for c, r in leaves]
+    # (hoja, dirección hacia fuera, material): cada flor queda justo fuera de la superficie de su hoja
+    for i, d, m in ((1, (0.7, 0.3, 0.6), pink), (2, (-0.6, -0.4, 0.7), yellow), (3, (-0.5, 0.6, 0.6), pink),
+                    (4, (0.6, -0.7, 0.4), yellow), (0, (0.2, 0.2, 1.0), pink), (3, (-0.9, 0.4, 0.2), yellow)):
+        (cx, cy, cz), r = leaves[i]
+        k = (r + 0.02) / math.sqrt(sum(v * v for v in d))
+        objs.append(blob(0.09, (cx + k * d[0], cy + k * d[1], cz + k * d[2]), m))
+    export('bush', objs)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT_DIR, exist_ok=True)
-    for build in (build_flyer, build_shooter, build_boss, build_wasp, build_hopper, build_spiky, build_fish):
+    for build in (build_flyer, build_shooter, build_boss, build_wasp, build_hopper, build_spiky, build_fish,
+                  build_housefly, build_worm, build_beetle, build_tree_oak, build_tree_birch, build_tree_palm,
+                  build_tree_pine, build_rock_a, build_rock_b, build_bush):
         build()

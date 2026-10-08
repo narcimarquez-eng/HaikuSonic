@@ -36,7 +36,7 @@ export function updateWorld(W, lv, t, dt, px) {
   for (const g of W.chunks.values()) g.visible = g.userData.x1 > px - 300 && g.userData.x0 < px + 320;
   updateBackdrop(W.bd, t, dt);
   updateEntities(W.ent, lv, t, dt);
-  updateWater(W.water, t, dt);
+  updateWater(W.water, t, dt, px);
 }
 
 // Libera geometrías y materiales de la fase (las texturas compartidas se conservan)

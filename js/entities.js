@@ -84,9 +84,9 @@ function enemySet(geos, mats, N, root) {
 }
 
 // Crea anillos, enemigos, postes y meta. Anillos y enemigos son instancias compartidas (pocas llamadas de dibujo)
-const MODEL_OF = { fly: 'flyer', shoot: 'shooter', boss: 'boss', wasp: 'wasp', hop: 'hopper', spiny: 'spiky', fish: 'fish' };   // tipo de enemigo -> modelo de Blender
+const MODEL_OF = { fly: 'flyer', shoot: 'shooter', boss: 'boss', wasp: 'wasp', hop: 'hopper', spiny: 'spiky', fish: 'fish', housefly: 'housefly', worm: 'worm', beetle: 'beetle' };   // tipo de enemigo -> modelo de Blender
 const SHOT_MAX = 40;                                                   // proyectiles de enemigos visibles a la vez
-const SIZE_OF = { wasp: 1.25, hop: 1.15, spiny: 1.15, fish: 1.2 };     // los enemigos pequeños se dibujan un poco más grandes
+const SIZE_OF = { wasp: 1.25, hop: 1.15, spiny: 1.15, fish: 1.2, housefly: 1.4 };     // los enemigos pequeños se dibujan un poco más grandes
 const _id = new THREE.Matrix4();
 
 // Piezas de un modelo como mallas instanciadas (una por pieza y tipo): si el modelo no cargó, una esfera de respaldo

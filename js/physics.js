@@ -124,6 +124,26 @@ function fish(e, dt) {
   }
 }
 
+// Mosca doméstica: vuela en círculos pequeños y rápidos sobre un punto que patrulla por el tramo
+function housefly(e, lv, dt) {
+  e.ax += e.dir * e.speed * dt;
+  if (e.ax < e.minX) { e.ax = e.minX; e.dir = 1; }
+  if (e.ax > e.maxX) { e.ax = e.maxX; e.dir = -1; }
+  const a = lv.t * 7 + e.phase;
+  e.x = e.ax + Math.cos(a) * 0.7;
+  e.y = e.base + Math.sin(2 * a) * 0.25;
+  e.face = e.dir;
+}
+
+// Gusano: asoma del suelo, se queda un rato y se vuelve a hundir. Solo toca cuando está fuera (up ≥ 0.5)
+function worm(e, dt) {
+  if (e.st === 'hide') { if ((e.t -= dt) <= 0) e.st = 'rise'; }
+  else if (e.st === 'rise') { e.up = Math.min(1, e.up + dt * 2.2); if (e.up >= 1) { e.st = 'out'; e.t = 1.5; } }
+  else if (e.st === 'out') { if ((e.t -= dt) <= 0) e.st = 'sink'; }
+  else { e.up = Math.max(0, e.up - dt * 2.2); if (e.up <= 0) { e.st = 'hide'; e.t = 1.2 + e.phase * 0.5; } }
+  e.y = e.base + (e.up - 1) * 0.6;                  // el cuerpo, plano, asoma del suelo al subir
+}
+
 // Torreta y jefe: disparan al jugador cuando está a su alcance
 function fire(e, lv, dt) {
   const p = player;
@@ -148,6 +168,8 @@ function moveEnemy(e, lv, dt) {
     case 'wasp': wasp(e, lv, dt); break;
     case 'hop': hop(e, lv, dt); break;
     case 'fish': fish(e, dt); break;
+    case 'housefly': housefly(e, lv, dt); break;
+    case 'worm': worm(e, dt); break;
     case 'shoot': patrol(e, 0, dt); fire(e, lv, dt); break;
     case 'boss': patrol(e, e.speed, dt); fire(e, lv, dt); break;
     default: patrol(e, e.speed ?? 2.2, dt);        // caminantes y erizos
@@ -389,6 +411,7 @@ export function stepWorld(dt) {
     if (!e.alive) continue;
     moveEnemy(e, lv, dt);
     if (e.type === 'fish' && !e.leap) continue;          // el pez escondido bajo el agua no toca
+    if (e.type === 'worm' && e.up < 0.5) continue;       // el gusano escondido bajo el suelo no toca
     const r = e.r || ENEMY_R, ey = e.y + r;
     const dx = e.x - p.x, dy = ey - p.y;
     if (dx * dx + dy * dy >= (r + 0.4) ** 2) continue;
