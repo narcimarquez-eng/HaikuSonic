@@ -28,13 +28,13 @@ export function spawnBurst(fx, x, y, n = 14, pal = 0) {
     fx.next = (i + 1) % MAX;
     p.x = x; p.y = y;
     if (pal === 1) {                                  // salpicaduras: hacia arriba y hacia los lados
-      p.vx = (Math.random() - 0.5) * 6; p.vy = 3 + Math.random() * 6;
+      p.vx = (Math.random() - 0.5) * 4; p.vy = 1.2 + Math.random() * 3;
     } else {
       const a = Math.random() * Math.PI * 2, v = 4 + Math.random() * 7;
       p.vx = Math.cos(a) * v; p.vy = Math.sin(a) * v + 3;
     }
     p.max = p.life = LIFE * (0.7 + Math.random() * 0.6);
-    p.size = (pal === 1 ? 0.45 : 0.6) + Math.random() * 0.6;
+    p.size = (pal === 1 ? 0.25 : 0.6) + Math.random() * (pal === 1 ? 0.3 : 0.6);
     fx.im.setColorAt(i, _c.setHex(colors[Math.floor(Math.random() * colors.length)]));
   }
   fx.im.instanceColor.needsUpdate = true;

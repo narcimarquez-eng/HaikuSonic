@@ -121,7 +121,7 @@ function buildPool(s, zi, G, anim) {
   nmap.repeat.set(Math.max(1, w / 4), Math.max(1, DEPTH / 4));
   nmap.needsUpdate = true;
   const topM = new THREE.MeshStandardMaterial({
-    color: WATER_HEX[zi], transparent: true, opacity: 0.66, roughness: 0.05, metalness: 0,
+    color: WATER_HEX[zi], transparent: true, opacity: 0.55, roughness: 0.05, metalness: 0,
     normalMap: nmap, normalScale: new THREE.Vector2(0.8, 0.8), depthWrite: false, envMapIntensity: 1.4,
   });
   const surface = mesh(G, new THREE.PlaneGeometry(w, DEPTH), topM, cx, s.wl, 0);
@@ -132,6 +132,9 @@ function buildPool(s, zi, G, anim) {
     color: WATER_HEX[zi], map: shoreTex, transparent: true, roughness: 0.05, depthWrite: false, envMapIntensity: 1.2,
   });
   mesh(G, new THREE.PlaneGeometry(w, h), frontM, cx, s.y1 + h / 2, DEPTH / 2 + 0.02);
+  // Borde de espuma en la línea de agua: marca dónde acaba la superficie y evita que el frente parezca una caja
+  const lipM = new THREE.MeshBasicMaterial({ color: 0xffffff, map: shoreTex, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false });
+  mesh(G, new THREE.PlaneGeometry(w, 0.12), lipM, cx, s.wl - 0.06, DEPTH / 2 + 0.05);
 
   // Espuma sobre la superficie: una lámina horizontal con manchas blancas
   const ft = foamTex.clone();
@@ -151,7 +154,7 @@ function buildFall(f, G, anim) {
   st.offset.y = Math.random();
   st.needsUpdate = true;
   // Lámina azulada detrás y estrías blancas delante; toneMapped:false para que el blanco no se vuelva gris
-  const sheetM = new THREE.MeshBasicMaterial({ color: 0xa6ecff, transparent: true, opacity: 0.3, depthWrite: false, toneMapped: false });
+  const sheetM = new THREE.MeshBasicMaterial({ color: 0xa6ecff, transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false });
   const streakM = new THREE.MeshBasicMaterial({ color: 0xffffff, map: st, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false });
   mesh(G, new THREE.PlaneGeometry(f.w, h), sheetM, f.x, f.yBot + h / 2, 2.22);
   mesh(G, new THREE.PlaneGeometry(f.w, h), streakM, f.x, f.yBot + h / 2, 2.25);
@@ -161,7 +164,8 @@ function buildFall(f, G, anim) {
   ft.repeat.set(Math.max(1, f.w / 2), 1);
   ft.needsUpdate = true;
   const foamM = new THREE.MeshBasicMaterial({ color: 0xffffff, map: ft, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false });
-  const foam = mesh(G, new THREE.PlaneGeometry(f.w * 2.6, 1.2), foamM, f.x, f.yBot + 0.35, 2.3);
+  // La espuma se apoya en la línea de agua, sin pasarse de la anchura de la caída
+  const foam = mesh(G, new THREE.PlaneGeometry(f.w * 1.6, 0.8), foamM, f.x, f.yBot + 0.2, 2.3);
   anim.push({ kind: 'foam', obj: foam });
 }
 
@@ -192,7 +196,7 @@ export function updateWater(anim, t, dt, px = 0) {
       a.splashT -= dt;
       if (a.splashT <= 0 && Math.abs(a.x - px) < SPLASH_RANGE) {
         a.splashT = 0.1 + Math.random() * 0.08;
-        for (let k = 0; k < 2; k++) G.fx.push({ x: a.x + (Math.random() - 0.5) * a.w, y: a.yBot + 0.4, n: 4, pal: 1 });
+        for (let k = 0; k < 2; k++) G.fx.push({ x: a.x + (Math.random() - 0.5) * a.w, y: a.yBot + 0.15, n: 3, pal: 1 });
       }
     } else { const k = 1 + 0.08 * Math.sin(t * 5); a.obj.scale.set(k, 1 + 0.2 * Math.sin(t * 5), 1); }
   }
