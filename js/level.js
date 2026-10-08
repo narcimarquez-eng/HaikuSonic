@@ -10,22 +10,24 @@ export const SPRING_V = 26;
 export const DROP_W = 6;      // ancho horizontal de una bajada (y de una subida)
 export const DROP_D = 7;      // profundidad de una bajada: hasta el suelo de la galería
 
-// Cada acto tiene longitud y pesos de sección propios (el agua no deja bajar: el fondo queda bajo el mar)
+// Cada acto tiene longitud y pesos de sección propios (el agua no deja bajar: el fondo queda bajo el mar).
+// spike: pinchos con muelle y plataforma alta (en verde e industrial, a veces con galería bajo los pinchos)
+// water: un hueco con agua, con muelle y plataforma alta. climb: escalada en tres niveles
 const PROFILE = [
-  [ // Verde: tramos, bucles y bajadas a la galería
-    { len: 900, enemies: 0.45, w: { run: 40, hills: 22, gap: 12, boost: 8, loop: 6, gallery: 7, climb: 5 } },
-    { len: 1050, enemies: 0.55, w: { run: 30, hills: 18, gap: 10, boost: 9, loop: 14, gallery: 12, climb: 5 } },
-    { len: 1200, enemies: 0.65, w: { run: 24, hills: 14, gap: 12, boost: 8, loop: 20, gallery: 14, climb: 6 } },
+  [ // Verde: tramos, bucles, bajadas, pinchos y charcos
+    { len: 900, enemies: 0.45, w: { run: 36, hills: 18, gap: 10, boost: 8, loop: 6, gallery: 5, spike: 7, water: 3, climb: 5 } },
+    { len: 1050, enemies: 0.55, w: { run: 28, hills: 14, gap: 9, boost: 8, loop: 12, gallery: 6, spike: 9, water: 4, climb: 6 } },
+    { len: 1200, enemies: 0.65, w: { run: 22, hills: 10, gap: 8, boost: 7, loop: 16, gallery: 6, spike: 11, water: 4, climb: 7 } },
   ],
-  [ // Industrial: cintas, huecos, escaladas y mantenimiento subterráneo
-    { len: 950, enemies: 0.5, w: { run: 36, hills: 4, gap: 24, boost: 10, loop: 7, gallery: 9, climb: 9 } },
-    { len: 1100, enemies: 0.6, w: { run: 30, hills: 4, gap: 26, boost: 9, loop: 10, gallery: 12, climb: 9 } },
-    { len: 1250, enemies: 0.7, w: { run: 24, hills: 4, gap: 28, boost: 8, loop: 14, gallery: 14, climb: 8 } },
+  [ // Industrial: cintas, huecos, pinchos, escaladas y mantenimiento subterráneo
+    { len: 950, enemies: 0.5, w: { run: 32, hills: 4, gap: 16, boost: 9, loop: 7, gallery: 6, spike: 9, climb: 7 } },
+    { len: 1100, enemies: 0.6, w: { run: 26, hills: 4, gap: 18, boost: 8, loop: 10, gallery: 7, spike: 11, climb: 8 } },
+    { len: 1250, enemies: 0.7, w: { run: 20, hills: 4, gap: 20, boost: 7, loop: 12, gallery: 8, spike: 13, climb: 9 } },
   ],
-  [ // Acuática: balsas sobre el agua y bucles
-    { len: 1000, enemies: 0.5, w: { run: 30, hills: 12, gap: 30, boost: 6, loop: 8, climb: 4 } },
-    { len: 1150, enemies: 0.6, w: { run: 24, hills: 12, gap: 30, boost: 6, loop: 12, climb: 6 } },
-    { len: 1300, enemies: 0.7, w: { run: 20, hills: 10, gap: 30, boost: 6, loop: 16, climb: 8 } },
+  [ // Acuática: balsas, bucles, pinchos de coral y agua con muelle
+    { len: 1000, enemies: 0.5, w: { run: 26, hills: 10, gap: 18, boost: 5, loop: 8, spike: 7, water: 9, climb: 4 } },
+    { len: 1150, enemies: 0.6, w: { run: 22, hills: 10, gap: 18, boost: 5, loop: 10, spike: 8, water: 11, climb: 6 } },
+    { len: 1300, enemies: 0.7, w: { run: 18, hills: 8, gap: 18, boost: 5, loop: 14, spike: 8, water: 13, climb: 7 } },
   ],
 ];
 
@@ -35,7 +37,7 @@ export const slopeAt = (s, x) => s.ya + (s.yb - s.ya) * clamp((x - s.x0) / (s.x1
 // Altura de la superficie bajo la coordenada x (sin contar plataformas, muelles ni piedras)
 export function laneY(solids, x) {
   for (const s of solids) {
-    if (s.kind === 'platform' || s.kind === 'spring' || s.kind === 'ceiling' || s.kind === 'block') continue;
+    if (s.kind === 'platform' || s.kind === 'spring' || s.kind === 'ceiling' || s.kind === 'block' || s.kind === 'spikes' || s.kind === 'water') continue;
     if (x < s.x0 || x > s.x1) continue;
     return s.kind === 'slope' ? slopeAt(s, x) : s.y1;
   }
@@ -107,7 +109,8 @@ export function buildLevel(zi, ai) {
   let x = -10, top = 0, nextCp = 60;
 
   const pushGround = (x0, x1, y1, extra = {}) => S.push({ kind: 'ground', x0, x1, y0: -4, y1, ...extra });
-  const spring = (sx, y0) => S.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0, y1: y0 + 0.6, power: SPRING_V, squash: 0 });
+  // fwd: el muelle conserva la velocidad horizontal al lanzar (vuela hacia delante, no solo arriba)
+  const spring = (sx, y0, fwd = false) => S.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0, y1: y0 + 0.6, power: SPRING_V, squash: 0, fwd });
   const boulder = (bx, y0, w = 1.3, h = 1.2) => S.push({ kind: 'block', x0: bx, x1: bx + w, y0, y1: y0 + h });
   const overhang = (ax, base) => S.push({ kind: 'ceiling', x0: ax, x1: ax + 5, y0: base + 2.8, y1: base + 4.1, base });
   const ringArc = (cx, cy, span, count) => {
@@ -151,7 +154,7 @@ export function buildLevel(zi, ai) {
       }
       if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
       // Muelles y piedras lejos del final del tramo: un muelle de lado no debe lanzar al jugador sobre el hueco
-      if (len > 12 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 9), top);
+      if (len > 32 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 28), top, true);   // lanza hacia delante: el vuelo cae dentro del tramo
       if (len > 14 && rng() < 0.18) boulder(rnd(x0 + 4, x1 - 9), top);
       if (len > 14 && rng() < 0.28) {                  // plataforma alta con muelle debajo
         const px = rnd(x0 + 2, x1 - 7), pw = rnd(3, 5), py = top + rnd(3.2, 4);
@@ -249,18 +252,63 @@ export function buildLevel(zi, ai) {
     x = Xr + W;
   };
 
-  // Escalada: dos plataformas altas con muelles
-  const climbSec = () => {
-    const len = rnd(36, 46), x0 = x, x1 = x + len;
-    pushGround(x0, x1, top);
-    const p1 = x0 + 8, p2 = x0 + len - 14;
-    S.push({ kind: 'platform', x0: p1, x1: p1 + 4, y0: top + 3.0, y1: top + 3.6 });
-    spring(p1 + 0.5, top);
-    ringArc(p1 + 2, top + 4.7, 4, 5);
-    S.push({ kind: 'platform', x0: p2, x1: p2 + 4, y0: top + 3.4, y1: top + 4.0 });
-    spring(p2 + 0.5, top);
-    ringArc(p2 + 2, top + 5.1, 4, 5);
-    x = x1;
+  // Zona de peligro con muelle: pinchos o agua entre el muelle y el suelo de llegada.
+  // El muelle, pisado corriendo, lanza al jugador por encima de la franja; una plataforma alta (6.5 sobre la pista)
+  // recoge a quien va en el vuelo. Con galería, un tubo baja bajo los pinchos: el camino sin peligro.
+  const hazardSec = (kind, gallery) => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const wd = rnd(7, 8);                              // ancho de la franja de pinchos o de agua
+    const Xs = x + rnd(10, 14);                        // boca de bajada (solo con galería)
+    const W = DROP_W, yF = top - DROP_D;
+    const sx = gallery ? Xs + W + 5 : x + rnd(10, 14); // muelle
+    const b0 = sx + 4, b1 = b0 + wd;                   // franja de pinchos o agua
+    const end = sx + 26;                               // suelo de llegada (el vuelo del muelle cae hacia sx + 20)
+    const P = top + 6.5;                               // plataforma alta sobre la franja
+    if (gallery) {
+      pushGround(x, Xs, top);
+      const drop = addPath(slidePts(Xs, top + 0.5, W, DROP_D, -1), 'drop');
+      const rise = addPath(slidePts(end, yF + 0.5, W, DROP_D, 1), 'rise');
+      pathRings(drop, [0.4, 0.7]);
+      pathRings(rise, [0.4, 0.7]);
+      S.push({ kind: 'ground', x0: Xs, x1: end - 8, y0: yF - 8, y1: yF, gallery: true });
+      S.push({ kind: 'ground', x0: end - 8, x1: end - 1, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
+      S.push({ kind: 'ground', x0: end - 1, x1: end + W, y0: yF - 8, y1: yF, gallery: true });
+      S.push({ kind: 'ground', x0: Xs + W, x1: end, y0: top - 4, y1: top, slab: true });
+      S.push({ kind: 'ceiling', x0: Xs + W, x1: end, y0: top - 4, y1: top - 3.9, base: top, slabCeil: true });
+      lv.galleries.push({ xs: Xs, xr: end, w: W, yF, top });
+      spring(sx, top, true);
+      S.push({ kind: 'spikes', x0: b0, x1: b1, y0: top, y1: top + 1.1 });
+      x = end + W;
+    } else {
+      if (kind === 'water') {
+        pushGround(x, b0, top); pushGround(b1, end, top);
+        S.push({ kind: 'water', x0: b0, x1: b1, level: top - 1.4 });
+      } else {
+        pushGround(x, end, top);
+        S.push({ kind: 'spikes', x0: b0, x1: b1, y0: top, y1: top + 1.1 });
+      }
+      spring(sx, top, true);
+      x = end;
+    }
+    // Plataforma alta sobre la franja, anillos en la trayectoria del muelle y arco de anillos sobre la franja
+    S.push({ kind: 'platform', x0: sx + 12, x1: sx + 22, y0: P - 0.6, y1: P });
+    ringArc(sx + 17, P + 1.2, 8, 5);
+    for (const t of [0.25, 0.45, 0.65]) lv.rings.push({ x: sx + 22 * t, y: top + 1.1 + 26 * t - 21 * t * t + 0.5, taken: false });
+    ringArc(b0 + wd / 2, top + 2.4, wd, 3);
+  };
+
+  // Escalada en tres niveles: un muelle lanza a una plataforma alta (6.5) y otro, sobre ella, a una más alta (12.5)
+  const climb3Sec = () => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const s1 = x + rnd(10, 14), s2 = s1 + 22, P1 = top + 6.5, P2 = top + 12.5;
+    pushGround(x, s1 + 48, top);
+    spring(s1, top, true);
+    S.push({ kind: 'platform', x0: s1 + 11, x1: s1 + 25, y0: P1 - 0.6, y1: P1 });
+    spring(s2, P1, true);
+    S.push({ kind: 'platform', x0: s2 + 14, x1: s2 + 24, y0: P2 - 0.6, y1: P2 });
+    ringArc(s1 + 18, P1 + 1.2, 8, 5);
+    ringArc(s2 + 19, P2 + 1.2, 8, 5);
+    x = s1 + 48;
   };
 
   // Inicio tranquilo y después secciones según el perfil del acto
@@ -273,7 +321,9 @@ export function buildLevel(zi, ai) {
     else if (r === 'boost') boostSec(rnd(28, 40));
     else if (r === 'loop') { loopSec(); runSec(rnd(12, 18)); }
     else if (r === 'gallery') { gallerySec(); runSec(rnd(10, 16)); }
-    else if (r === 'climb') climbSec();
+    else if (r === 'spike') hazardSec('spikes', zi < 2 && rng() < 0.5);
+    else if (r === 'water') hazardSec('water', false);
+    else if (r === 'climb') climb3Sec();
   }
   // Meta: suelo liso al final
   pushGround(x, x + 40, top);

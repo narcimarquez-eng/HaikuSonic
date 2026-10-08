@@ -1,6 +1,6 @@
 // Física: jugador, sólidos AABB con rampas, tubos y reglas (anillos, enemigos, control, meta)
 import { input, isJumpHeld, readAxisX, readDown } from './input.js';
-import { slopeAt, pathAt, SPRING_V } from './level.js';
+import { slopeAt, pathAt } from './level.js';
 import { approach } from './util.js';
 
 export const STEP = 1 / 120;      // paso fijo de física (estable a cualquier FPS)
@@ -35,7 +35,8 @@ function resolveX(p, solids, prevX) {
   const top = p.y + PH / 2, bottom = p.y - PH / 2;
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
-    if (s.kind === 'platform' || s.kind === 'ceiling') continue;   // una cara o solo techo: no bloquean de lado
+    // Una cara o solo techo no bloquean de lado; pinchos y agua no son sólidos (hacen daño o matan en stepWorld)
+    if (s.kind === 'platform' || s.kind === 'ceiling' || s.kind === 'spikes' || s.kind === 'water') continue;
     if (top <= s.y0 + EPS || bottom >= s.y1 - EPS) continue;
     if (right <= s.x0 || left >= s.x1) continue;
     if (s.kind === 'slope') {
@@ -43,12 +44,7 @@ function resolveX(p, solids, prevX) {
       if (bottom < slopeMax(s, p) - WALL_LIFT) { p.x = prevX; p.vx = 0; p.dashT = 0; p.charge = 0; }
       continue;
     }
-    if (s.kind === 'spring') {
-      // Un muelle de lado te lanza hacia arriba en vez de bloquearte
-      p.x = prevX; p.vx = 0; p.vy = SPRING_V; p.grounded = false; p.groundSolid = null; p.jumping = false;
-      s.squash = 0.15;
-      continue;
-    }
+    if (s.kind === 'spring') continue;          // un muelle no bloquea: se pisa y lanza (resolveY)
     const pushLeft = right - s.x0, pushRight = s.x1 - left;
     p.x = pushLeft < pushRight ? s.x0 - PW / 2 : s.x1 + PW / 2;
     p.vx = 0; p.dashT = 0; p.charge = 0;
@@ -60,6 +56,18 @@ function resolveY(p, solids, prevBottom) {
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
     if (right <= s.x0 || left >= s.x1) continue;
+    if (s.kind === 'spikes' || s.kind === 'water') continue;
+    if (s.kind === 'spring') {
+      // Un muelle se activa al pisarlo (de frente o al caer encima). Los de avance conservan la velocidad
+      // horizontal; los verticales, si se pisan de lado, saltan sin avance (como antes)
+      const bottom = p.y - PH / 2;
+      if (p.vy <= 0.5 && bottom < s.y1 + 0.02 && bottom > s.y0 - 0.25) {
+        if (!s.fwd && prevBottom < s.y1 - 0.05) p.vx = 0;
+        p.y = s.y1 + PH / 2; p.vy = s.power; p.grounded = false; p.groundSolid = null; p.jumping = false;
+        s.squash = 0.15;
+      }
+      continue;
+    }
     if (s.kind === 'ceiling') {
       // Bajo un saliente: el salto se corta al chocar con la roca
       if (p.vy > 0 && prevBottom + PH <= s.y0 + 0.02 && p.y + PH / 2 > s.y0) { p.y = s.y0 - PH / 2; p.vy = 0; }
@@ -76,10 +84,6 @@ function resolveY(p, solids, prevBottom) {
     if ((p.vy <= 0 && prevBottom >= surf - tol && bottom < surf + reach) || inside) {
       p.y = surf + PH / 2;
       p.vy = 0; p.grounded = true; p.groundSolid = s;
-      if (s.kind === 'spring') {
-        p.vy = s.power; p.grounded = false; p.groundSolid = null; p.jumping = false;
-        s.squash = 0.15;
-      }
     }
   }
 }
@@ -221,6 +225,21 @@ export function stepWorld(dt) {
   }
 
   stepPlayer(dt);
+
+  // Pinchos: tocarlos hace daño (como un enemigo). Agua: caer dentro de un hueco mata
+  for (const s of lv.solids) {
+    if (s.kind === 'spikes') {
+      if (p.x + PW / 2 > s.x0 && p.x - PW / 2 < s.x1 && p.y - PH / 2 < s.y1 - 0.02 && p.y + PH / 2 > s.y0 + 0.02) {
+        hurt();
+        if (G.mode !== 'play') return;
+        break;
+      }
+    } else if (s.kind === 'water' && p.x > s.x0 && p.x < s.x1 && p.y - PH / 2 < s.level) {
+      die();
+      if (G.mode !== 'play') return;
+      break;
+    }
+  }
 
   // Enemigos: destruidos al rodar, pisoteados o te hieren
   for (const e of lv.enemies) {

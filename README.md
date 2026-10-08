@@ -25,6 +25,8 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Tramos para correr, colinas con rampas, huecos (puentes de troncos, pasarelas de acero o cuerdas; en el agua, balsas), franjas de aceleración con flechas, escaladas con muelles.
 - Tubos verticales que se recorren por dentro: **bucles** (hay que venir rápido, por eso hay una franja de aceleración antes) y **bajadas a una galería subterránea**: un tubo baja de la superficie a un pasadizo bajo la pista, recorre la galería (con cristales, estalactitas y piedras) y otro tubo la devuelve arriba. La bajada es opcional: se puede saltar el pozo por encima. Los tubos tienen cuadros, anillos de refuerzo y bridas en las bocas, y se corta la mitad cercana para ver al erizo dentro. Una señal con flecha marca cada bajada.
 - Salientes de roca que se pasan por debajo (no se puede saltar a través de ellos) y piedras sólidas que se saltan o se rodean.
+- Zonas de peligro: **pinchos** (en verde e industrial, a veces con una galería bajo ellos que sirve de atajo sin peligro) y **agua** (huecos que matan al caer). Un muelle, pisado corriendo, lanza al jugador por encima de la franja hasta una plataforma alta, a 6.5 sobre la pista.
+- Escaladas en tres niveles: un muelle lleva a una plataforma alta y otro, sobre ella, a una más alta (12.5).
 - Anillos (instancing), muelles, plataformas de una cara, plataformas móviles con engranajes, enemigos que se pisan o se destruyen rodando, postes de control y meta.
 - Terreno de fondo continuo con la pista, por tramos, con colinas (verde), fábricas (industrial) o mar con islas (acuática).
 - Cordilleras de crestas con roca, estratos y nieve, con niebla atmosférica.
@@ -49,7 +51,7 @@ Las texturas de hierba, madera, ladrillo, suelo y agua son imágenes de muestra 
 
 - `index.html`: HTML, CSS, marcador, controles táctiles y pantallas. Carga `js/main.js` como módulo y define el mapa de importación de Three.js.
 - `js/main.js`: renderer, cielo, luces, flujo (título, juego, acto completado, fin) y bucle principal.
-- `js/physics.js`: física del jugador (sólidos AABB, rampas, tubos) y reglas (anillos, enemigos, control, meta). Paso fijo de 1/120 s.
+- `js/physics.js`: física del jugador (sólidos AABB, rampas, tubos, muelles) y reglas (anillos, enemigos, pinchos, agua, control, meta). Paso fijo de 1/120 s.
 - `js/input.js`: teclado, joystick y botones táctiles.
 - `js/level.js`: generador de fases: secciones, trayectorias de tubos y datos de cada sólido.
 - `js/lane.js`: geometría de la pista (suelo, rampas, muelles, piedras, salientes, plataformas, puentes, tubos, hierba).

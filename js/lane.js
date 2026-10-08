@@ -11,6 +11,8 @@ const WALL_HEX = [0x6b6358, 0x4c525b];     // pared de fondo de la galería
 const RIB_HEX = [0xc6ff6b, 0x9fb3c8, 0x7dffc4];      // anillos y bridas del tubo (no se confunden con los anillos dorados)
 const CRYSTAL_HEX = [0x7dffb0, 0x5ce1ff, 0x7dffc4];  // cristales de la galería
 const FLOOR_HEX = [0x8c8474, 0x9aa4ae];    // suelo de la galería
+const SPIKE_HEX = [0xc9d2da, 0xa8b2bc, 0xff7a5c];   // pinchos: acero en verde e industrial, coral en la zona acuática
+const WATER_HEX = [0x3a9ee0, 0x2f8fd8, 0x2a9ee8];   // agua de los huecos
 
 // Hierba 3D: briznas instanciadas y, opcionalmente, flores
 export function addGrass(G, surfs, density, rnd, flowers) {
@@ -214,6 +216,20 @@ export function buildLane(lv, zi, T, chunkOf) {
       const red = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.45 });
       const yel = new THREE.MeshStandardMaterial({ color: 0xffe53b, roughness: 0.35 });
       s.mesh = addBox(G, [red, red, yel, red, red, red], (s.x0 + s.x1) / 2, s.y0 + 0.3, 0, s.x1 - s.x0, 0.6, 1.4);
+    } else if (s.kind === 'spikes') {
+      // Pinchos: conos sobre una base oscura (no son sólidos: hacen daño al tocarlos)
+      const w = s.x1 - s.x0, cx = (s.x0 + s.x1) / 2, G = chunkOf(cx);
+      addBox(G, new THREE.MeshStandardMaterial({ color: 0x8b1e1e, roughness: 0.7 }), cx, s.y0 + 0.06, 0, w, 0.12, 2.4);
+      const spikeM = new THREE.MeshStandardMaterial({ color: SPIKE_HEX[zi], metalness: zi === 2 ? 0 : 0.4, roughness: 0.3 });
+      const n = Math.max(3, Math.round(w / 0.45));
+      const items = [];
+      for (let i = 0; i < n; i++) items.push({ x: s.x0 + (i + 0.5) * w / n, y: s.y0 + 0.55, z: 0, sx: 0.26, sy: 1.1, sz: 0.26 });
+      instanced(G, UNIT_CONE, spikeM, items);
+    } else if (s.kind === 'water') {
+      // Agua de un hueco: lámina translúcida con su cara superior en el nivel del agua
+      const w = s.x1 - s.x0, cx = (s.x0 + s.x1) / 2, G = chunkOf(cx);
+      const waterM = new THREE.MeshStandardMaterial({ color: WATER_HEX[zi], transparent: true, opacity: 0.72, roughness: 0.15, metalness: 0.1 });
+      addBox(G, waterM, cx, s.level - 0.25, 0, w, 0.5, 3.6);
     } else if (s.kind === 'block') {
       // Piedra sólida: se salta o se rodea
       const G = chunkOf((s.x0 + s.x1) / 2), w = s.x1 - s.x0, h = s.y1 - s.y0;
