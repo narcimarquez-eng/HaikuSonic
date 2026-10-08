@@ -34,7 +34,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Enemigos repartidos: cada tramo de 100 unidades tiene al menos dos, sobre la pista llana y lejos de trampas.
 - Agua: **arroyos** y **lagunas** poco profundos por los que se chapotea (más despacio y salpicando), con superficie de ondas y un frente translúcido que se desvanece hacia el fondo; **cascadas** de estrías verticales que bajan por el borde de una meseta hasta un estanque, con salpicaduras en la base; y los huecos con agua con peces dentro.
 - Terreno de fondo continuo con la pista, por tramos, con colinas (verde), fábricas (industrial) o mar con islas (acuática). En la zona verde y en la industrial, un camino serpentea por el fondo; en la verde, además, un río cruza los valles y hay arboledas.
-- Cordilleras de crestas con roca, estratos y nieve, con niebla atmosférica.
+- Cordilleras de crestas con roca, estratos y nieve, con niebla atmosférica. Cada cordillera tiene columnas más finas que antes, dientes en la cresta, barrancos verticales, una línea de nieve irregular y un relieve de roca (mapa de normales CC0). En la zona verde hay cuatro capas de montañas, con pinos, árboles y rocas al pie; en la acuática, cuatro capas con rocas al pie; en la industrial, dos capas tras el skyline.
 - Decoración por acto: árboles, pinos, matorrales con flores, rocas, tótems, setas y arcos (verde); edificios, grúas, tanques, tuberías y contenedores (industrial); palmeras, muelles, islas de arena y arcos (acuática). Árboles, rocas y arbustos son modelos de Blender (`assets/models/`), con figuras de respaldo si no cargan.
 - Hierba 3D (briznas instanciadas) y flores sobre las superficies verdes.
 - Cielo, niebla, luz del sol y colores que cambian en cada acto (día, tarde, atardecer o noche según la zona).
@@ -45,12 +45,12 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Los tubos son planos (en el eje X-Y): no hay tubos que se crucen en profundidad.
 - La zona acuática no tiene bajadas: el agua llega hasta -3.4 (línea de muerte), así que no cabe una galería bajo la pista.
 - Sin raíles con cadenas colgantes ni sonido.
-- Los escenarios son geometría procedural de Three.js, salvo los enemigos y la decoración de árboles, rocas y arbustos, que son modelos de Blender (`assets/models/*.glb`). No se usan texturas ni modelos de bibliotecas gratuitas (Poly Haven, ambientCG, Kenney, Quaternius): el entorno de desarrollo no tenía acceso a ellas.
+- Los escenarios son geometría procedural de Three.js, salvo los enemigos y la decoración de árboles, rocas y arbustos, que son modelos de Blender (`assets/models/*.glb`). Las fotos de textura de bibliotecas gratuitas (Poly Haven, ambientCG) no son accesibles desde el entorno de desarrollo, así que el color de la roca y de las montañas es procedural. Sí se usa un mapa de normales CC0 del paquete npm `@pmndrs/assets` para el relieve de las cordilleras.
 - Pendiente de probar en un móvil real: rendimiento y tamaño de la pantalla. Las pruebas automáticas se han hecho en Chromium headless con renderizado por software.
 
 ## Texturas
 
-Las texturas de hierba, madera, ladrillo y suelo son imágenes de muestra de three.js (MIT). El agua (ondas, espuma y estrías de las cascadas) se genera en `js/water.js`: el entorno de desarrollo no tenía acceso a bibliotecas de texturas. Ver `assets/textures/README.md`. Las demás (roca, montaña, tierra, arena, tubos, nubes, ventanas) se generan en el juego (`js/textures.js`).
+Las texturas de hierba, madera, ladrillo y suelo son imágenes de muestra de three.js (MIT). El relieve de las cordilleras es un mapa de normales CC0 (`assets/textures/rock_normal.webp`). El agua (ondas, espuma y estrías de las cascadas) se genera en `js/water.js`. Ver `assets/textures/README.md`. Las demás (roca, montaña, tierra, arena, tubos, nubes, ventanas) se generan en el juego (`js/textures.js`).
 
 ## Estructura
 

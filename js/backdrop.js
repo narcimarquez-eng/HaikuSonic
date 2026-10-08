@@ -40,9 +40,9 @@ export const LOOK = [
 
 // Cordilleras de fondo por zona: altura máxima, profundidad y semilla de las crestas
 const RANGES = [
-  [{ z: -200, H: 96, base: -10, seed: 11 }, { z: -150, H: 66, base: -8, seed: 23 }, { z: -106, H: 40, base: -6, seed: 37 }],
+  [{ z: -200, H: 96, base: -10, seed: 11 }, { z: -150, H: 66, base: -8, seed: 23 }, { z: -128, H: 46, base: -7, seed: 141 }, { z: -106, H: 40, base: -6, seed: 37 }],
   [{ z: -205, H: 62, base: -10, seed: 51 }, { z: -158, H: 36, base: -8, seed: 67 }],
-  [{ z: -200, H: 90, base: -10, seed: 81 }, { z: -150, H: 58, base: -8, seed: 93 }, { z: -108, H: 30, base: -6, seed: 105 }],
+  [{ z: -200, H: 90, base: -10, seed: 81 }, { z: -150, H: 58, base: -8, seed: 93 }, { z: -128, H: 40, base: -7, seed: 151 }, { z: -108, H: 30, base: -6, seed: 105 }],
 ];
 
 // Colores de la zona y del acto (incluye acento y color de enemigos)
@@ -183,21 +183,42 @@ function ridgeAt(x, seed) {
   }
   return a / norm;
 }
+// Relieve de roca (mapa de normales CC0) para las cordilleras. Se clona una sola vez: las texturas no se liberan al
+// cambiar de fase, así que no conviene crear copias en cada carga
+let rockNormalTex = null;
+function rockNormal() {
+  if (!rockNormalTex && FILE.rockNormal) {
+    rockNormalTex = FILE.rockNormal.clone();
+    rockNormalTex.repeat.set(3, 3);
+    rockNormalTex.needsUpdate = true;
+  }
+  return rockNormalTex;
+}
+
+// Ruido de cresta en [0, 1] (0 en los valles, 1 en las aristas): dientes, barrancos y bordes de nieve
+const ridged = (x, seed, f, s) => { const r = 1 - Math.abs(2 * vnoise(x * f + seed, s, 4096, 4096) - 1); return r * r; };
+const MTN_STEP = 1.5;                                  // separación entre columnas (antes 3): crestas más finas
 function rangeMesh(R, x0, x1, look) {
   const pos = [], uv = [], col = [], idx = [];
   const cLow = new THREE.Color(look.mtnLow), cHigh = new THREE.Color(look.mtnHigh), cSnow = new THREE.Color(look.snow);
-  const c = new THREE.Color();
+  const cb = new THREE.Color(), ct = new THREE.Color();
   let n = 0;
-  for (let x = x0; x <= x1; x += 3) {
+  for (let x = x0; x <= x1; x += MTN_STEP) {
     const hn = Math.pow(ridgeAt(x, R.seed), 1.4);
-    const h = R.H * (0.12 + 0.88 * hn);
+    const upper = smooth(0.3, 0.8, hn);               // cuánto está en la parte alta de la ladera
+    const gully = Math.pow(ridged(x, R.seed * 3.3, 0.55, R.seed * 2.1), 3);   // barrancos verticales, estrechos
+    const teeth = ridged(x, R.seed * 1.7, 0.16, R.seed * 0.9);               // dientes de la cresta
+    const h = R.H * (0.12 + 0.88 * hn) * (1 - 0.06 * gully * upper) + R.H * 0.07 * teeth * upper;
     const top = R.base + h;
-    c.copy(cLow).lerp(cHigh, smooth(0.25, 0.7, hn));
-    c.lerp(cSnow, smooth(0.8, 0.9, hn));
+    // Color: roca abajo; la nieve cubre la cima con una línea irregular, no con una franja recta
+    const snowLine = 0.64 + (vnoise(x * 0.1 + R.seed * 0.7, R.seed * 1.3, 4096, 4096) - 0.5) * 0.14;
+    const shade = (1 - 0.3 * gully * upper) * (0.9 + 0.2 * vnoise(x * 0.09 + R.seed, R.seed * 0.5, 4096, 4096));
+    cb.copy(cLow).lerp(cHigh, smooth(0.25, 0.7, hn));
+    ct.copy(cb).lerp(cSnow, smooth(snowLine - 0.05, snowLine + 0.05, hn));
     pos.push(x, R.base - 4, R.z, x, top, R.z);
     uv.push(x / 60, 0, x / 60, h / 60);
     const k = 1.6;                                     // compensa la textura de roca (que oscurece)
-    col.push(c.r * 0.55 * k, c.g * 0.55 * k, c.b * 0.55 * k, c.r * k, c.g * k, c.b * k);
+    col.push(cb.r * 0.55 * k * shade, cb.g * 0.55 * k * shade, cb.b * 0.55 * k * shade, ct.r * k * shade, ct.g * k * shade, ct.b * k * shade);
     n++;
   }
   for (let i = 0; i < n - 1; i++) {
@@ -408,8 +429,12 @@ export function buildBackdrop(lv, zi, ai, T, chunkOf, root) {
 
   // Cordilleras con crestas (zona verde y acuática) o skyline (industrial)
   const ranges = RANGES[zi];
+  const rockN = rockNormal();
   for (const R of ranges) {
-    const mat = new THREE.MeshStandardMaterial({ map: T.mountain, vertexColors: true, roughness: 1, side: THREE.DoubleSide });
+    const mat = new THREE.MeshStandardMaterial({
+      map: T.mountain, normalMap: rockN, normalScale: new THREE.Vector2(0.9, 0.9),
+      vertexColors: true, roughness: 1, side: THREE.DoubleSide,
+    });
     const m = new THREE.Mesh(rangeMesh(R, X0 - 200, lv.endX + 200, look), mat);
     root.add(m);
   }
@@ -428,9 +453,9 @@ export function buildBackdrop(lv, zi, ai, T, chunkOf, root) {
   const B = decorBuckets(chunkOf);
   const ctx = { chunkOf, chimneys: [], rng };
   const BIG = new Set(['bld', 'crane', 'tank', 'cont']);
-  const place = (x, d) => {
+  const place = (x, d, forced) => {
     const y = H(x, d);
-    const k = pickWeighted(look.decor, rng);
+    const k = forced || pickWeighted(look.decor, rng);
     if (k === 'palm' && y < -1.2) return;            // las palmeras solo crecen sobre tierra
     if (k === 'island' && y > 1.5) return;
     if (zi === 0 && Math.abs(d - riverD(x)) < 2.4) return;   // nada en medio del río
@@ -450,6 +475,14 @@ export function buildBackdrop(lv, zi, ai, T, chunkOf, root) {
     for (let i = 0; i < 26; i++) {
       const gx = X0 + rng() * (X1 - X0), gd = 16 + rng() * 26;
       for (let k = 0; k < 5; k++) place(gx + (rng() - 0.5) * 9, gd + (rng() - 0.5) * 5);
+    }
+  }
+  // Pie de las cordilleras: pinos y rocas justo delante de cada cresta, para que la ladera tenga algo que ver
+  if (zi !== 1) {
+    const foot = zi === 0 ? ['pine', 'pine', 'tree', 'bush', 'rock'] : ['rock', 'rock', 'rock'];
+    for (const R of ranges) {
+      const d = LANE_Z - R.z - 2;                    // z = R.z + 2: delante de la cresta
+      for (let x = X0; x < X1; x += 5 + rng() * 6) place(x + (rng() - 0.5) * 4, d + (rng() - 0.5) * 2, foot[Math.floor(rng() * foot.length)]);
     }
   }
   B.flush();

@@ -10,6 +10,7 @@ import { G } from './physics.js';
 const WATER_HEX = [0x2b8fc4, 0x2a86bb, 0x3ca7d8];   // vados y estanques: azul translúcido (la zona acuática, más clara)
 const N = 256;                                         // tamaño de las texturas generadas (potencia de dos)
 const DEPTH = 3.8;                                     // profundidad (en z) de vados y estanques
+const FALL_DEPTH = 3.8;                                // profundidad (en z) de la cara de una cascada: la del escalón
 const SPLASH_RANGE = 45;                               // las cascadas salpican solo si el jugador está cerca
 let normalTex = null, foamTex = null, streakTex = null, shoreTex = null;
 
@@ -146,26 +147,33 @@ function buildPool(s, zi, G, anim) {
   anim.push({ kind: 'surf', tex: ft });
 }
 
-// Cascada: una lámina azulada, estrías verticales delante, y espuma con salpicaduras en la base
+// Cascada: cae por la cara del escalón, de la arista de la meseta al estanque. La lámina va en el plano YZ, pegada
+// a esa cara y con la profundidad del escalón, así que cubre toda la bajada (no una esquina). Delante, estrías
+// blancas; detrás, una lámina azulada. Espuma en el borde de la meseta y en la base, sobre el agua.
 function buildFall(f, G, anim) {
   const h = f.yTop - f.yBot;
   const st = streakTex.clone();
   st.repeat.set(1, Math.max(1, h / 3));
   st.offset.y = Math.random();
   st.needsUpdate = true;
-  // Lámina azulada detrás y estrías blancas delante; toneMapped:false para que el blanco no se vuelva gris
-  const sheetM = new THREE.MeshBasicMaterial({ color: 0xa6ecff, transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false });
-  const streakM = new THREE.MeshBasicMaterial({ color: 0xffffff, map: st, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false });
-  mesh(G, new THREE.PlaneGeometry(f.w, h), sheetM, f.x, f.yBot + h / 2, 2.22);
-  mesh(G, new THREE.PlaneGeometry(f.w, h), streakM, f.x, f.yBot + h / 2, 2.25);
-  anim.push({ kind: 'fall', tex: st, speed: 2.4, x: f.x, w: f.w, yBot: f.yBot, splashT: 0 });
-  // Espuma en la base de la caída
+  // toneMapped:false para que el blanco no se vuelva gris; DoubleSide por si la cámara queda al otro lado
+  const sheetM = new THREE.MeshBasicMaterial({ color: 0xa6ecff, transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const streakM = new THREE.MeshBasicMaterial({ color: 0xffffff, map: st, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const sheet = mesh(G, new THREE.PlaneGeometry(FALL_DEPTH, h), sheetM, f.x + 0.04, f.yBot + h / 2, 0);
+  const streaks = mesh(G, new THREE.PlaneGeometry(FALL_DEPTH, h), streakM, f.x + 0.07, f.yBot + h / 2, 0);
+  sheet.rotation.y = streaks.rotation.y = Math.PI / 2;
+  anim.push({ kind: 'fall', tex: st, speed: 2.4, x: f.x, yBot: f.yBot, splashT: 0 });
+  // Espuma en el borde de la meseta, por donde sale el agua
   const ft = foamTex.clone();
-  ft.repeat.set(Math.max(1, f.w / 2), 1);
+  ft.repeat.set(Math.max(1, FALL_DEPTH / 2), 1);
   ft.needsUpdate = true;
+  const lipM = new THREE.MeshBasicMaterial({ color: 0xffffff, map: ft, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false });
+  const lip = mesh(G, new THREE.PlaneGeometry(0.9, FALL_DEPTH), lipM, f.x - 0.2, f.yTop + 0.03, 0);
+  lip.rotation.x = -Math.PI / 2;
+  // Espuma en la base, tendida sobre el agua del estanque
   const foamM = new THREE.MeshBasicMaterial({ color: 0xffffff, map: ft, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false });
-  // La espuma se apoya en la línea de agua, sin pasarse de la anchura de la caída
-  const foam = mesh(G, new THREE.PlaneGeometry(f.w * 1.6, 0.8), foamM, f.x, f.yBot + 0.2, 2.3);
+  const foam = mesh(G, new THREE.PlaneGeometry(2.4, FALL_DEPTH), foamM, f.x + 1.0, f.yBot + 0.04, 0);
+  foam.rotation.x = -Math.PI / 2;
   anim.push({ kind: 'foam', obj: foam });
 }
 
@@ -196,7 +204,7 @@ export function updateWater(anim, t, dt, px = 0) {
       a.splashT -= dt;
       if (a.splashT <= 0 && Math.abs(a.x - px) < SPLASH_RANGE) {
         a.splashT = 0.1 + Math.random() * 0.08;
-        for (let k = 0; k < 2; k++) G.fx.push({ x: a.x + (Math.random() - 0.5) * a.w, y: a.yBot + 0.15, n: 3, pal: 1 });
+        for (let k = 0; k < 2; k++) G.fx.push({ x: a.x + 0.3 + Math.random() * 1.2, y: a.yBot + 0.3, n: 3, pal: 1 });
       }
     } else { const k = 1 + 0.08 * Math.sin(t * 5); a.obj.scale.set(k, 1 + 0.2 * Math.sin(t * 5), 1); }
   }

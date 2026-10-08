@@ -9,9 +9,10 @@ const FILE_URLS = {
   brick: 'assets/textures/brick.jpg',
   floor: 'assets/textures/floor.jpg',
   waternormal: 'assets/textures/waternormal.jpg',
+  rockNormal: 'assets/textures/rock_normal.webp',   // relieve de roca para las cordilleras (CC0)
 };
 
-// Carga las imágenes reales; si alguna falla se usa la versión procedural
+// Carga las imágenes reales; si alguna falla se usa la versión procedural. Los mapas de normales no llevan color
 export async function loadFileTextures() {
   const loader = new THREE.TextureLoader();
   await Promise.all(Object.entries(FILE_URLS).map(async ([k, url]) => {
@@ -19,7 +20,7 @@ export async function loadFileTextures() {
       const t = await loader.loadAsync(url);
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.anisotropy = 4;
-      t.colorSpace = k === 'waternormal' ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+      t.colorSpace = /normal/i.test(k) ? THREE.NoColorSpace : THREE.SRGBColorSpace;
       FILE[k] = t;
     } catch (e) { /* sin imagen: se usa la procedural */ }
   }));
