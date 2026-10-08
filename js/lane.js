@@ -313,6 +313,12 @@ export function buildLane(lv, zi, T, chunkOf) {
         const woodM = new THREE.MeshStandardMaterial({ map: tiled(woodTex, w / 3, h / 3), roughness: 0.8 });
         s.mesh = addBox(G, woodM, s.cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
       }
+    } else if (s.kind === 'wall') {
+      // Suelo, techo o muro de una cámara oculta: bloque de roca; con sup, pilares hasta la plataforma de abajo
+      const cx = (s.x0 + s.x1) / 2, G = chunkOf(cx), w = s.x1 - s.x0, h = s.y1 - s.y0;
+      const wallM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, w / 3, h / 3), roughness: 0.9 });
+      addBox(G, wallM, cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
+      if (s.sup) for (const px of [s.x0 + 0.5, s.x1 - 0.5]) addBox(G, wallM, px, (s.sup + s.y0) / 2, -1.2, 0.55, s.y0 - s.sup, 0.55);
     } else if (s.kind === 'platform') {
       const cx = (s.x0 + s.x1) / 2, w = s.x1 - s.x0, h = s.y1 - s.y0, G = chunkOf(cx);
       if (s.bridge) {

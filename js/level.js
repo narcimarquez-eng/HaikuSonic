@@ -17,19 +17,19 @@ const WALL = 8.5;             // distancia del muelle al muro de una meseta: a v
 // water: un hueco con agua, con muelle y meseta. lift: muelle y meseta de 4. climb: dos mesetas (4 y 8)
 const PROFILE = [
   [ // Verde: tramos, bucles, valles, arroyos, cascadas, pinchos, charcos, mesetas, avispas y erizos
-    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { run: 30, hills: 14, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
-    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { run: 22, hills: 10, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
-    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { run: 18, hills: 8, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
+    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { upper: 6, tunnels: 8, run: 30, hills: 14, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
+    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { upper: 6, tunnels: 8, run: 22, hills: 10, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
+    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { upper: 6, tunnels: 8, run: 18, hills: 8, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
   ],
   [ // Industrial: cintas, huecos, valles, arroyos, pinchos, mesetas, torretas y erizos
-    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { run: 26, hills: 4, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, gallery: 6, spike: 9, lift: 8, climb: 5 } },
-    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { run: 20, hills: 4, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, gallery: 7, spike: 11, lift: 9, climb: 7 } },
-    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { run: 16, hills: 4, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, gallery: 8, spike: 13, lift: 10, climb: 8 } },
+    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { upper: 6, tunnels: 8, run: 26, hills: 4, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, gallery: 6, spike: 9, lift: 8, climb: 5 } },
+    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { upper: 6, tunnels: 8, run: 20, hills: 4, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, gallery: 7, spike: 11, lift: 9, climb: 7 } },
+    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { upper: 6, tunnels: 8, run: 16, hills: 4, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, gallery: 8, spike: 13, lift: 10, climb: 8 } },
   ],
   [ // Acuática: balsas, bucles, valles con laguna, pinchos de coral, agua y mesetas
-    { len: 1000, enemies: 0.5, fly: 0.3, shoot: 0.1, wasp: 0.3, hop: 0.1, spiny: 0.1, w: { run: 20, hills: 8, dip: 8, gap: 14, boost: 4, loop: 7, spike: 6, water: 9, lift: 6, climb: 4 } },
-    { len: 1150, enemies: 0.6, fly: 0.35, shoot: 0.15, wasp: 0.35, hop: 0.15, spiny: 0.15, w: { run: 16, hills: 8, dip: 10, gap: 14, boost: 4, loop: 9, spike: 7, water: 11, lift: 7, climb: 5 } },
-    { len: 1300, enemies: 0.7, fly: 0.4, shoot: 0.2, wasp: 0.4, hop: 0.2, spiny: 0.2, w: { run: 14, hills: 6, dip: 12, gap: 14, boost: 4, loop: 12, spike: 7, water: 13, lift: 8, climb: 6 } },
+    { len: 1000, enemies: 0.5, fly: 0.3, shoot: 0.1, wasp: 0.3, hop: 0.1, spiny: 0.1, w: { upper: 6, run: 20, hills: 8, dip: 8, gap: 14, boost: 4, loop: 7, spike: 6, water: 9, lift: 6, climb: 4 } },
+    { len: 1150, enemies: 0.6, fly: 0.35, shoot: 0.15, wasp: 0.35, hop: 0.15, spiny: 0.15, w: { upper: 6, run: 16, hills: 8, dip: 10, gap: 14, boost: 4, loop: 9, spike: 7, water: 11, lift: 7, climb: 5 } },
+    { len: 1300, enemies: 0.7, fly: 0.4, shoot: 0.2, wasp: 0.4, hop: 0.2, spiny: 0.2, w: { upper: 6, run: 14, hills: 6, dip: 12, gap: 14, boost: 4, loop: 12, spike: 7, water: 13, lift: 8, climb: 6 } },
   ],
 ];
 
@@ -39,7 +39,7 @@ export const slopeAt = (s, x) => s.ya + (s.yb - s.ya) * clamp((x - s.x0) / (s.x1
 // Altura de la superficie bajo la coordenada x (sin contar plataformas, muelles ni piedras)
 export function laneY(solids, x) {
   for (const s of solids) {
-    if (s.kind === 'platform' || s.kind === 'spring' || s.kind === 'ceiling' || s.kind === 'block' || s.kind === 'spikes' || s.kind === 'water') continue;
+    if (s.kind === 'platform' || s.kind === 'spring' || s.kind === 'ceiling' || s.kind === 'block' || s.kind === 'spikes' || s.kind === 'water' || s.kind === 'wall') continue;
     if (x < s.x0 || x > s.x1) continue;
     return s.kind === 'slope' ? slopeAt(s, x) : s.y1;
   }
@@ -105,7 +105,7 @@ export function buildLevel(zi, ai) {
   const rnd = (a, b) => a + (b - a) * rng();
   const lv = {
     zone: zi, act: ai, endX: 0, goalX: 0, goalY: 0, killY: KILL_Y[zi], t: 0,
-    solids: [], enemies: [], rings: [], checkpoints: [], paths: [], galleries: [], shots: [], falls: [],
+    solids: [], enemies: [], rings: [], checkpoints: [], paths: [], galleries: [], shots: [], falls: [], items: [],
   };
   const S = lv.solids;
   let x = -10, top = 0, nextCp = 60;
@@ -125,6 +125,9 @@ export function buildLevel(zi, ai) {
   };
   const boulder = (bx, y0, w = 1.3, h = 1.2) => S.push({ kind: 'block', x0: bx, x1: bx + w, y0, y1: y0 + h });
   const overhang = (ax, base) => S.push({ kind: 'ceiling', x0: ax, x1: ax + 5, y0: base + 2.8, y1: base + 4.1, base });
+  // Potenciadores: escudo, zapatillas, estrella (invencible un rato) y vida extra
+  const itemAt = (ix, iy, type) => lv.items.push({ type, x: ix, y: iy, taken: false });
+  const randItem = () => pickWeighted({ shield: 35, speed: 35, star: 15, life: 15 }, rng);
   const ringArc = (cx, cy, span, count) => {
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
@@ -163,6 +166,7 @@ export function buildLevel(zi, ai) {
       if (x0 > nextCp) { lv.checkpoints.push({ x: x0 + 2, y: top, hit: false }); nextCp = x0 + 170; }
       if (len > 14 && rng() < prof.enemies) {
         lv.enemies.push({ x: rnd(x0 + 4, x1 - 6), minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });   // se aleja del borde: no espera junto a los huecos
+        if (len > 40 && rng() < 0.5) lv.enemies.push({ x: rnd(x0 + 8, x1 - 10), minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });
       }
       if (len > 24 && rng() < prof.fly) {              // dron que patrulla sobre el tramo, a la altura de un salto
         const fx0 = rnd(x0 + 4, x1 - 16), fw = rnd(8, 12);
@@ -185,6 +189,7 @@ export function buildLevel(zi, ai) {
         lv.enemies.push({ type: 'shoot', x: sx, minX: sx, maxX: sx, dir: -1, speed: 0, y: top, cd: rnd(0.5, 1.5), phase: 0, alive: true, inv: 0, r: 0.5 });
       }
       if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
+      if (rng() < 0.1) itemAt(rnd(x0 + 6, x1 - 8), top + 1.3, randItem());
       // Muelles y piedras lejos del final del tramo: el vuelo del muelle cae dentro del tramo
       if (len > 40 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 34), top);
       if (len > 14 && rng() < 0.18) boulder(rnd(x0 + 4, x1 - 9), top);
@@ -258,7 +263,7 @@ export function buildLevel(zi, ai) {
   // Bajada: un tubo lleva de la superficie a una galería bajo la pista; otro tubo la devuelve arriba.
   // La losa de la superficie queda encima de la galería, así que el atajo es opcional (se puede saltar el pozo).
   // La galería es un túnel rápido: su suelo entero es franja de aceleración.
-  const gallerySec = () => {
+  const gallerySec = (withItem = false) => {
     const W = DROP_W, D = DROP_D, yF = top - D;
     const Xs = x + rnd(12, 18);                     // boca de bajada, en la superficie
     const G = rnd(40, 50);                           // longitud de la galería entre los dos pozos
@@ -278,11 +283,53 @@ export function buildLevel(zi, ai) {
     S.push({ kind: 'ceiling', x0: Xs + W, x1: Xr, y0: top - 4, y1: top - 3.9, base: top, slabCeil: true });
     lv.galleries.push({ xs: Xs, xr: Xr, w: W, yF, top });
     ringLine(Xs + W + 2, Xr - 2, yF + 1.2, 8);
+    if (withItem) itemAt((Xs + W + Xr) / 2 + rnd(-4, 4), yF + 1.3, randItem());
     if (rng() < 0.6) {
       lv.enemies.push({ x: rnd(Xs + W + 3, Xr - 10), minX: Xs + W + 1, maxX: Xr - 9, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: yF });
     }
     if (rng() < 0.5) boulder(rnd(Xs + W + 6, Xr - 14), yF);
     x = Xr + W;
+  };
+
+  // Cadena de túneles: dos o tres bajadas a galerías seguidas, cada una con su potenciador
+  const tunnelsSec = () => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const n = rng() < 0.5 ? 2 : 3;
+    for (let i = 0; i < n; i++) gallerySec(true);
+  };
+
+  // Rama alta: un muelle lanza a una plataforma sobre la pista (con anillos, enemigos y potenciadores) y un tubo
+  // baja de vuelta a la pista. Con secret, un tubo sube desde la plataforma a una cámara oculta en un piso más alto:
+  // es el único camino hasta ella (la cámara no tiene otra entrada, ni por abajo ni de lado)
+  const upperSec = (secret = false) => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const W = DROP_W, DH = top + 6.5, L = secret ? 62 : 26, CH = DH + 6;   // con cámara, la plataforma sigue lo bastante para bajar después
+    const sp = x + rnd(10, 13), dx0 = sp + 5, dx1 = dx0 + L;
+    const bz = dx0 + 14, xs = dx0 + 22;             // franja de aceleración antes del tubo de subida (la cámara pide velocidad)
+    pushGround(x, sp + 1.2, top);
+    spring(sp, top);
+    flightRings(sp, top, [0.25, 0.45, 0.62]);
+    pushGround(sp + 1.2, dx1 + W + 10, top);          // la pista sigue por debajo de la plataforma
+    S.push({ kind: 'platform', x0: dx0, x1: bz, y0: DH - 2.2, y1: DH });
+    S.push({ kind: 'platform', x0: bz, x1: xs, y0: DH - 2.2, y1: DH, boost: 1 });
+    S.push({ kind: 'platform', x0: xs, x1: dx1, y0: DH - 2.2, y1: DH });
+    ringLine(dx0 + 2, dx1 - 2, DH + 1.4, 6);
+    lv.enemies.push({ x: dx0 + 8, minX: dx0 + 2, maxX: dx1 - 6, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: DH, inv: 0, r: 0.5 });
+    if (L > 30) lv.enemies.push({ x: dx1 - 10, minX: dx0 + 14, maxX: dx1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: DH, inv: 0, r: 0.5 });
+    itemAt(dx0 + 12, DH + 1.3, randItem());
+    itemAt(dx0 + 22, DH + 1.3, randItem());
+    pathRings(addPath(slidePts(dx1, DH + 0.5, W, DH - top, -1), 'drop'), [0.4, 0.7]);
+    if (secret) {
+      const xf = xs + W, xc = xf + 10;                // tubo de subida en la plataforma; boca de bajada de la cámara
+      pathRings(addPath(slidePts(xs, DH + 0.5, W, CH - DH, 1), 'rise'), [0.3, 0.5, 0.7]);
+      S.push({ kind: 'wall', x0: xf - 1, x1: xc, y0: CH - 2.2, y1: CH, sup: DH });      // suelo de la cámara, sobre pilares
+      S.push({ kind: 'wall', x0: xf - 1, x1: xc, y0: CH + 4, y1: CH + 4.6 });           // techo
+      ringLine(xf + 1, xc - 1, CH + 2.2, 5);
+      itemAt(xf + 3, CH + 1.3, 'star');
+      itemAt(xf + 7, CH + 1.3, 'life');
+      pathRings(addPath(slidePts(xc, CH + 0.5, W, CH - DH, -1), 'drop'), [0.5]);
+    }
+    x = dx1 + W + 10;
   };
 
   // Zona de peligro con muelle: pinchos o agua entre el muelle y una meseta alta (6.5 sobre la pista). El muelle
@@ -404,8 +451,12 @@ export function buildLevel(zi, ai) {
 
   // Inicio tranquilo y después secciones según el perfil del acto
   runSec(rnd(24, 34), true);
+  let secretPending = rng() < 0.7;      // a veces: una cámara oculta sobre la rama alta de este acto
   while (x < prof.len) {
     const r = pickWeighted(prof.w, rng);
+    if (secretPending && x > prof.len * 0.35) { secretPending = false; upperSec(true); continue; }
+    if (r === 'upper') { upperSec(false); continue; }
+    if (r === 'tunnels') { tunnelsSec(); runSec(rnd(10, 16)); continue; }
     if (r === 'run') runSec(rnd(30, 60));
     else if (r === 'hills') hillsSec(rnd(45, 70));
     else if (r === 'gap') { gapSec(); runSec(rnd(10, 16)); }
@@ -433,7 +484,7 @@ export function buildLevel(zi, ai) {
   pushGround(x, x + 40, top);
   lv.goalX = x + 12; lv.goalY = top;
   lv.endX = x + 40;
-  // Reparto de enemigos: cada tramo de 100 unidades tiene al menos dos, sobre la pista llana y lejos de trampas
+  // Reparto de enemigos: cada tramo de 100 unidades tiene al menos seis, sobre la pista llana y lejos de trampas
   const placeEnemy = (type, ex, s, r) => {
     const y = s.y1, dir = r() < 0.5 ? -1 : 1, phase = r() * 6;
     const base = { x: ex, minX: Math.max(s.x0 + 2, ex - 4), maxX: Math.min(s.x1 - 3, ex + 4), dir, y, phase, alive: true, inv: 0, r: 0.5 };
@@ -458,7 +509,7 @@ export function buildLevel(zi, ai) {
   const enemyNear = (ex) => lv.enemies.some((e) => Math.abs(e.x - ex) < 9);
   for (let c = 60; c < stopX; c += 100) {
     const cEnd = Math.min(c + 100, stopX);
-    for (let tries = 0, have = lv.enemies.filter((e) => e.x >= c && e.x < cEnd).length; have < 2 && tries < 80; tries++) {
+    for (let tries = 0, have = lv.enemies.filter((e) => e.x >= c && e.x < cEnd).length; have < 6 && tries < 160; tries++) {
       const ex = c + (cEnd - c) * rng();
       // Bichos de cada zona: gusanos y escarabajos en la verde, escarabajos en la industrial, moscas sobre el agua
       const bugs = { worm: zi === 0 ? 4 : 0, beetle: zi === 1 ? 5 : zi === 0 ? 3 : 0, housefly: zi === 2 ? 4 : 2 };

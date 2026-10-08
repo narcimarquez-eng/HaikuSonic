@@ -19,6 +19,9 @@ export function buildPlayer(scene) {
   const spin = new THREE.Group();   // giro al rodar o en el salto
   root.add(lean); lean.add(spin);
   PV.root = root; PV.lean = lean; PV.spin = spin;
+  // Escudo: burbuja translúcida alrededor del erizo (solo visible con el escudo activo)
+  PV.bubble = new THREE.Mesh(new THREE.SphereGeometry(0.85, 24, 16), new THREE.MeshBasicMaterial({ color: 0x39e6ff, transparent: true, opacity: 0.28, depthWrite: false, toneMapped: false }));
+  PV.bubble.position.set(0, 0.45, 0); PV.bubble.visible = false; root.add(PV.bubble);
 
   const blue = std(0x1f63e0, 0.38);
   const blueD = std(0x0f49b5, 0.45);
@@ -121,6 +124,8 @@ export function updatePlayer(PV, p, t, dt) {
   PV.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, 0);
   PV.root.scale.set(p.facing * VS, VS, VS);
   PV.root.visible = !(p.invT > 0 && Math.floor(t * 16) % 2 === 0);
+  PV.bubble.visible = p.shield;
+  if (p.shield) PV.bubble.scale.setScalar(1 + 0.05 * Math.sin(t * 8));
   const ball = p.rolling || p.spinAir;
   PV.face.visible = !ball; PV.head.visible = !ball;
   PV.arms.forEach((a) => (a.visible = !ball));

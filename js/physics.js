@@ -21,6 +21,9 @@ const WALL_LIFT = 1.2;            // escalón que se sube al entrar de lado en u
 const STEP_UP = 0.3;              // escalón bajo los pies que se sube sin frenar (la unión de una rampa con la pista)
 const MAX_SHOTS = 30;             // proyectiles de enemigos a la vez
 const SPRING_VX = 24;             // velocidad horizontal máxima al salir de un muelle (el vuelo cae donde lo espera la meseta)
+const ITEM_R = 1.0;               // radio para recoger un potenciador
+const POWER_T = 10;               // segundos de zapatillas y de estrella
+const SPEED_MUL = 1.35;           // multiplicador de velocidad máxima con zapatillas
 
 // Estado del jugador (se reinicia en cada fase)
 export const player = {
@@ -28,6 +31,7 @@ export const player = {
   grounded: false, groundSolid: null, jumping: false, spinAir: false,
   crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
   path: null, s: 0, pv: 0, wet: false, splashT: 0,
+  shield: false, speedT: 0, starT: 0,   // potenciadores activos: escudo (un golpe), zapatillas y estrella (segundos)
 };
 
 // Estado de la partida; main.js fija onComplete y onGameOver
@@ -259,6 +263,9 @@ function stepPlayer(dt) {
   const down = readDown();
   p.invT = Math.max(0, p.invT - dt);
   p.dashT = Math.max(0, p.dashT - dt);
+  p.speedT = Math.max(0, p.speedT - dt);
+  p.starT = Math.max(0, p.starT - dt);
+  const k = p.speedT > 0 ? SPEED_MUL : 1;
 
   // Salto (altura variable: soltar pronto corta el salto)
   if (input.jumpPressed) {
@@ -292,8 +299,8 @@ function stepPlayer(dt) {
     if (p.crouch) p.vx = approach(p.vx, 0, 30 * dt);
     else if (Math.abs(ax) > 0.1) {
       const reversing = Math.sign(ax) !== Math.sign(p.vx) && Math.abs(p.vx) > 1;
-      if (!reversing && Math.abs(p.vx) > TOP_SPEED) p.vx = approach(p.vx, Math.sign(p.vx) * TOP_SPEED, OVER_DRAG * dt);
-      else p.vx = approach(p.vx, ax * TOP_SPEED, (reversing ? ACCEL * 2.5 : ACCEL) * dt);
+      if (!reversing && Math.abs(p.vx) > TOP_SPEED * k) p.vx = approach(p.vx, Math.sign(p.vx) * TOP_SPEED * k, OVER_DRAG * dt);
+      else p.vx = approach(p.vx, ax * TOP_SPEED * k, (reversing ? ACCEL * 2.5 : ACCEL) * dt);
     } else {
       p.vx = approach(p.vx, 0, (p.rolling ? ROLL_FRICTION : FRICTION) * dt);
     }
@@ -303,10 +310,10 @@ function stepPlayer(dt) {
       const g = (s.yb - s.ya) / (s.x1 - s.x0);
       p.vx -= GRAVITY * g * (g > 0 ? UPHILL : DOWNHILL) / (1 + g * g) * dt;
     }
-  } else if (Math.abs(ax) > 0.1 && (Math.abs(p.vx) <= TOP_SPEED || Math.sign(p.vx) !== Math.sign(ax))) {
-    p.vx = approach(p.vx, ax * TOP_SPEED, 9 * dt);
+  } else if (Math.abs(ax) > 0.1 && (Math.abs(p.vx) <= TOP_SPEED * k || Math.sign(p.vx) !== Math.sign(ax))) {
+    p.vx = approach(p.vx, ax * TOP_SPEED * k, 9 * dt);
   }
-  p.vx = clamp(p.vx, -MAX_RUN, MAX_RUN);
+  p.vx = clamp(p.vx, -MAX_RUN * k, MAX_RUN * k);
 
   // Gravedad (en suelo mantiene vy ligeramente negativa para detectar apoyo)
   if (p.grounded) p.vy = -GRAVITY * dt;
@@ -348,9 +355,26 @@ function stepPlayer(dt) {
   }
 }
 
+// Recoger un potenciador: el escudo absorbe un golpe, las zapatillas suben la velocidad, la estrella hace invencible
+// (y destruye lo que toca) y la vida extra suma una vida
+function grant(type) {
+  const p = player;
+  if (type === 'shield') p.shield = true;
+  else if (type === 'speed') p.speedT = POWER_T;
+  else if (type === 'star') p.starT = POWER_T;
+  else if (type === 'life') G.lives = Math.min(G.lives + 1, 9);
+  G.score += 50;
+  G.fx.push({ x: p.x, y: p.y, n: 14, pal: 0 });
+}
+
 export function hurt() {
   const p = player, lv = G.lv;
-  if (p.invT > 0) return;
+  if (p.invT > 0 || p.starT > 0) return;
+  if (p.shield) {                                      // el escudo absorbe el golpe: no se pierden anillos ni vida
+    p.shield = false; p.invT = 1.5;
+    G.fx.push({ x: p.x, y: p.y, n: 14, pal: 0 });
+    return;
+  }
   if (p.rings > 0) {                                    // con anillos: los suelta y sigue
     const n = Math.min(p.rings, 20);
     for (let i = 0; i < n && lv.scatter.length < MAX_SCATTER; i++) {
@@ -373,6 +397,7 @@ export function die() {
   p.vx = 0; p.vy = 0; p.rings = 0; p.invT = 1.5;
   p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0; p.spinAir = false; p.path = null;
   p.wet = false;
+  p.shield = false; p.speedT = 0; p.starT = 0;
 }
 
 // Un paso fijo: móviles, jugador, enemigos, anillos, puntos de control, caída y meta
@@ -416,7 +441,7 @@ export function stepWorld(dt) {
     const dx = e.x - p.x, dy = ey - p.y;
     if (dx * dx + dy * dy >= (r + 0.4) ** 2) continue;
     const stomp = p.vy < 0 && p.y - PH / 2 > ey;          // cae sobre él
-    const roll = p.rolling || p.dashT > 0;                // rueda o carga
+    const roll = p.rolling || p.dashT > 0 || p.starT > 0; // rueda, carga o va con estrella
     const spin = p.spinAir && !p.grounded;                // gira en el aire (un salto o un muelle)
     if (e.spiky) {                                        // erizo: solo lo destruye rodar o cargar
       if (roll && !(e.inv > 0)) hitEnemy(e, ey);
@@ -451,6 +476,12 @@ export function stepWorld(dt) {
     if (r.taken) continue;
     const dx = r.x - p.x, dy = r.y - p.y;
     if (dx * dx + dy * dy < RING_R * RING_R) { r.taken = true; p.rings++; }
+  }
+  // Potenciadores: al pasar cerca se activan
+  for (const it of lv.items) {
+    if (it.taken) continue;
+    const dx = it.x - p.x, dy = it.y - p.y;
+    if (dx * dx + dy * dy < ITEM_R * ITEM_R) { it.taken = true; grant(it.type); }
   }
   // Anillos dispersos (tras recibir daño): caen y se pueden recoger tras un instante
   for (let i = lv.scatter.length - 1; i >= 0; i--) {

@@ -87,6 +87,13 @@ function enemySet(geos, mats, N, root) {
 const MODEL_OF = { fly: 'flyer', shoot: 'shooter', boss: 'boss', wasp: 'wasp', hop: 'hopper', spiny: 'spiky', fish: 'fish', housefly: 'housefly', worm: 'worm', beetle: 'beetle' };   // tipo de enemigo -> modelo de Blender
 const SHOT_MAX = 40;                                                   // proyectiles de enemigos visibles a la vez
 const SIZE_OF = { wasp: 1.25, hop: 1.15, spiny: 1.15, fish: 1.2, housefly: 1.4 };     // los enemigos pequeños se dibujan un poco más grandes
+// Potenciadores: geometría, tamaño, color y giro en reposo (anillo azul, rombo naranja, estrella amarilla, vida roja)
+const ITEM_STYLE = {
+  shield: { geo: RING_GEO, s: 1.3, col: 0x39e6ff, rz: 0 },
+  speed: { geo: UNIT_BOX, s: 0.55, col: 0xff8a2a, rz: Math.PI / 4 },
+  star: { geo: UNIT_SPHERE, s: 0.42, col: 0xffe14d, rz: 0 },
+  life: { geo: UNIT_SPHERE, s: 0.42, col: 0xff4d6d, rz: 0 },
+};
 const _id = new THREE.Matrix4();
 
 // Piezas de un modelo como mallas instanciadas (una por pieza y tipo): si el modelo no cargó, una esfera de respaldo
@@ -140,6 +147,16 @@ export function buildEntities(lv, zi, chunkOf, root) {
   E.shotIM.count = 0; E.shotIM.frustumCulled = false;
   root.add(E.shotIM);
 
+  // Potenciadores: una malla instanciada por tipo; cada uno flota y gira (al recogerlo se encoge)
+  E.items = Object.entries(ITEM_STYLE).map(([type, st]) => {
+    const list = lv.items.filter((it) => it.type === type);
+    list.forEach((it, k) => { it.k = k; });
+    const mat = new THREE.MeshStandardMaterial({ color: st.col, emissive: st.col, emissiveIntensity: 0.7, roughness: 0.3 });
+    const im = new THREE.InstancedMesh(st.geo, mat, Math.max(1, list.length));
+    im.count = list.length; im.frustumCulled = false;
+    root.add(im);
+    return { list, im, st };
+  });
   // Postes de control y meta (cada uno en el tramo donde está)
   const postM = std(0x7a5230, 0.8);
   const accentM = new THREE.MeshStandardMaterial({ color: ACCENT[zi], emissive: ACCENT[zi], emissiveIntensity: 0.35, roughness: 0.4 });
@@ -239,6 +256,16 @@ export function updateEntities(E, lv, t, dt) {
       s.mesh.scale.y = 0.6 * k;
       s.mesh.position.y = s.y0 + 0.3 * k;
     }
+  }
+  // Potenciadores: flotan y giran; recogidos se encogen a cero
+  for (const set of E.items) {
+    set.list.forEach((it, k) => {
+      _pos.set(it.x, it.y + Math.sin(t * 3 + it.x) * 0.15, 0);
+      _q.setFromEuler(_eul.set(0, t * 2 + it.x, set.st.rz));
+      _sc.setScalar(it.taken ? 0 : set.st.s);
+      set.im.setMatrixAt(k, m.compose(_pos, _q, _sc));
+    });
+    set.im.instanceMatrix.needsUpdate = true;
   }
   E.goalOrb.rotation.y = t * 2;
 }

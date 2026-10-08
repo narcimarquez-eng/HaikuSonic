@@ -6,7 +6,7 @@ import { loadModels } from './models.js';
 import { buildLevel, ZONE_NAMES } from './level.js';
 import { buildWorld, updateWorld, disposeWorld } from './world.js';
 import { buildPlayer, updatePlayer } from './player.js';
-import { player, G, STEP, LEVELS, stepWorld } from './physics.js';
+import { player, G, STEP, LEVELS, stepWorld, hurt } from './physics.js';
 import { createFx, spawnBurst, updateFx } from './fx.js';
 import { initInput, input } from './input.js';
 import { lookFor } from './backdrop.js';
@@ -105,7 +105,7 @@ function resetPlayer() {
   Object.assign(player, {
     x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1, grounded: false, groundSolid: null,
     jumping: false, spinAir: false, path: null, s: 0, pv: 0, crouch: false, charge: 0,
-    dashT: 0, rolling: false, roll: 0, invT: 0,
+    dashT: 0, rolling: false, roll: 0, invT: 0, shield: false, speedT: 0, starT: 0,
   });
 }
 
@@ -144,6 +144,7 @@ function updateCamera(dt) {
 function updateVisuals(t, dt) {
   if (!W) return;
   updatePlayer(PV, player, t, dt);
+  if (player.starT > 0 && Math.random() < dt * 14) G.fx.push({ x: player.x + (Math.random() - 0.5) * 1.6, y: player.y + Math.random() * 0.9, n: 3, pal: 0 });
   updateWorld(W, G.lv, t, dt, player.x);
   for (const f of G.fx) spawnBurst(fx, f.x, f.y, f.n, f.pal);
   G.fx.length = 0;
@@ -192,13 +193,19 @@ $('btnRetry').addEventListener('click', () => {
 });
 
 /* ---------- Marcador y bucle principal ---------- */
-const hud = { rings: $('rings'), lives: $('lives'), time: $('time'), score: $('score') };
+const hud = { rings: $('rings'), lives: $('lives'), time: $('time'), score: $('score'), power: $('power') };
 function updateHud() {
   const r = String(player.rings), l = String(G.lives), t = fmtTime(G.levelTime), s = String(G.score + player.rings * 10);
   if (hud.rings.textContent !== r) hud.rings.textContent = r;
   if (hud.lives.textContent !== l) hud.lives.textContent = l;
   if (hud.time.textContent !== t) hud.time.textContent = t;
   if (hud.score.textContent !== s) hud.score.textContent = s;
+  const parts = [];
+  if (player.shield) parts.push('ESCUDO');
+  if (player.speedT > 0) parts.push(`ZAPATILLAS ${Math.ceil(player.speedT)}`);
+  if (player.starT > 0) parts.push(`ESTRELLA ${Math.ceil(player.starT)}`);
+  hud.power.textContent = parts.join(' · ');
+  hud.power.classList.toggle('hidden', !parts.length);
 }
 
 let accumulator = 0;
@@ -228,7 +235,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     snap: () => { cam.x = player.x; cam.y = player.y; },
     setLives: (n) => { G.lives = n; },
     spark: (x, y) => G.fx.push({ x, y }),
-    stepWorld,
+    stepWorld, hurt,
     get player() { return player; },
     get lv() { return G.lv; },
     get draws() { return renderer.info.render.calls; },
