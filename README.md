@@ -22,7 +22,9 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 
 - 3 zonas (Verde, Industrial, Acuática) × 3 actos = 9 niveles generados proceduralmente con semilla fija.
 - Anillos (instancing), muelles, plataformas de una cara, plataformas móviles, enemigos que se pisan o se destruyen rodando, postes de control y meta.
-- Cielo y agua con shaders propios; decoración con parallax de profundidad (eje Z).
+- Texturas procedurales (sin imágenes externas) para hierba, tierra, madera, acero, arena y roca.
+- Iluminación con sombras, reflejos de entorno y tone mapping; cielo y agua con shaders propios.
+- Decoración con parallax de profundidad (eje Z): colinas, árboles y girasoles, fábricas con humo, islas y rocas.
 
 ## Limitaciones actuales
 
