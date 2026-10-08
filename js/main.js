@@ -6,6 +6,7 @@ import { buildLevel, ZONE_NAMES } from './level.js';
 import { buildWorld, updateWorld, disposeWorld } from './world.js';
 import { buildPlayer, updatePlayer } from './player.js';
 import { player, G, STEP, LEVELS, stepWorld } from './physics.js';
+import { createFx, spawnBurst, updateFx } from './fx.js';
 import { initInput, input } from './input.js';
 import { lookFor } from './backdrop.js';
 import { fmtTime } from './util.js';
@@ -26,6 +27,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.localClippingEnabled = true;     // los tubos se cortan con un plano (ver geo.js)
 
 const scene = new THREE.Scene();
+const fx = createFx(scene);             // chispas de los enemigos destruidos (compartidas por todas las fases)
 scene.fog = new THREE.Fog(0xc4e8ff, 70, 260);
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
 
@@ -113,6 +115,7 @@ function loadLevel(n) {
   const lv = buildLevel(zi, ai);
   lv.scatter = [];
   G.lv = lv;
+  G.fx.length = 0;
   W = buildWorld(lv, zi, ai, scene);
   applyLook(lookFor(zi, ai));
   resetPlayer();
@@ -141,6 +144,9 @@ function updateVisuals(t, dt) {
   if (!W) return;
   updatePlayer(PV, player, t, dt);
   updateWorld(W, G.lv, t, dt, player.x);
+  for (const f of G.fx) spawnBurst(fx, f.x, f.y);
+  G.fx.length = 0;
+  updateFx(fx, dt);
   updateCamera(dt);
 }
 
@@ -220,6 +226,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     setMode: (m) => { G.mode = m; },
     snap: () => { cam.x = player.x; cam.y = player.y; },
     setLives: (n) => { G.lives = n; },
+    spark: (x, y) => G.fx.push({ x, y }),
     stepWorld,
     get player() { return player; },
     get lv() { return G.lv; },

@@ -27,9 +27,16 @@ export const player = {
 export const G = {
   mode: 'title', lives: 3, score: 0, levelTime: 0, lv: null,
   checkpoint: { x: 0, y: 2 }, onComplete: null, onGameOver: null,
+  fx: [],                           // efectos pendientes (chispas): main.js los convierte en partículas
 };
 
 const slopeMax = (s, p) => Math.max(slopeAt(s, p.x - PW / 2), slopeAt(s, p.x + PW / 2));
+
+// Enemigo destruido: puntos y chispas en su posición
+function killEnemy(e, y) {
+  e.alive = false; G.score += 100;
+  G.fx.push({ x: e.x, y });
+}
 
 function resolveX(p, solids, prevX) {
   const top = p.y + PH / 2, bottom = p.y - PH / 2;
@@ -58,11 +65,9 @@ function resolveY(p, solids, prevBottom) {
     if (right <= s.x0 || left >= s.x1) continue;
     if (s.kind === 'spikes' || s.kind === 'water') continue;
     if (s.kind === 'spring') {
-      // Un muelle se activa al pisarlo (de frente o al caer encima). Los de avance conservan la velocidad
-      // horizontal; los verticales, si se pisan de lado, saltan sin avance (como antes)
+      // Un muelle se activa al pisarlo (de frente o al caer encima) y lanza sin frenar la velocidad horizontal
       const bottom = p.y - PH / 2;
       if (p.vy <= 0.5 && bottom < s.y1 + 0.02 && bottom > s.y0 - 0.25) {
-        if (!s.fwd && prevBottom < s.y1 - 0.05) p.vx = 0;
         p.y = s.y1 + PH / 2; p.vy = s.power; p.grounded = false; p.groundSolid = null; p.jumping = false;
         s.squash = 0.15;
       }
@@ -171,10 +176,12 @@ function stepPlayer(dt) {
   if (p.grounded && p.groundSolid && p.groundSolid.boost && (p.vx > 0 || ax > 0.1)) {
     p.vx = Math.max(p.vx, BOOST_V);
   }
-  // Entrada a un tubo al cruzar su base sobre la pista hacia la derecha
-  if (p.grounded && p.vx > 0) {
+  // Entrada a un tubo al cruzar su base hacia la derecha: sobre la pista, o bajo en la boca de una subida de galería
+  // (el techo de la galería corta los saltos, así que un salto sobre la boca no deja al jugador en el vacío)
+  if (p.vx > 0) {
     for (const pt of lv.paths) {
-      if (prevX < pt.x0 && p.x >= pt.x0) {
+      const onBase = p.grounded || (pt.kind === 'rise' && p.y - PH / 2 < pt.y0 + 1.5);
+      if (onBase && prevX < pt.x0 && p.x >= pt.x0) {
         p.path = pt; p.s = 0; p.pv = p.vx;
         p.x = pt.x0; p.y = pt.y0 + 0.5;
         p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
@@ -251,9 +258,9 @@ export function stepWorld(dt) {
     const dx = e.x - p.x, dy = ey - p.y;
     if (dx * dx + dy * dy < (ENEMY_R + 0.4) ** 2) {
       if (p.rolling || p.dashT > 0) {               // rodando: destruye
-        e.alive = false; G.score += 100;
+        killEnemy(e, ey);
       } else if (p.vy < 0 && p.y - PH / 2 > ey) {   // pisotón
-        e.alive = false; G.score += 100;
+        killEnemy(e, ey);
         p.vy = 10; p.grounded = false; p.groundSolid = null;
       } else {
         hurt();

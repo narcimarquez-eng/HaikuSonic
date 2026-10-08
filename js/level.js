@@ -1,4 +1,5 @@
-// Generador de fases: secciones (tramos con objetos, colinas, huecos, bucles, bajadas a una galería subterránea y escaladas)
+// Generador de fases: secciones (tramos con objetos, colinas, huecos, bucles, bajadas a una galería subterránea,
+// mesetas con muelle y escaladas)
 import { mulberry32, clamp, lerp, pickWeighted } from './util.js';
 
 export const ZONE_NAMES = ['Zona Verde', 'Zona Industrial', 'Zona Acuática'];
@@ -9,25 +10,26 @@ export const TUBE_R = 1.6;    // radio interior del tubo que rodea la trayectori
 export const SPRING_V = 26;
 export const DROP_W = 6;      // ancho horizontal de una bajada (y de una subida)
 export const DROP_D = 7;      // profundidad de una bajada: hasta el suelo de la galería
+const WALL = 8.5;             // distancia del muelle al muro de una meseta: a velocidad de carrera el vuelo la libra
 
 // Cada acto tiene longitud y pesos de sección propios (el agua no deja bajar: el fondo queda bajo el mar).
-// spike: pinchos con muelle y plataforma alta (en verde e industrial, a veces con galería bajo los pinchos)
-// water: un hueco con agua, con muelle y plataforma alta. climb: escalada en tres niveles
+// spike: pinchos con muelle que lanza sobre una meseta (en verde e industrial, a veces con galería bajo los pinchos)
+// water: un hueco con agua, con muelle y meseta. lift: muelle y meseta de 4. climb: dos mesetas (4 y 8)
 const PROFILE = [
-  [ // Verde: tramos, bucles, bajadas, pinchos y charcos
-    { len: 900, enemies: 0.45, w: { run: 36, hills: 18, gap: 10, boost: 8, loop: 6, gallery: 5, spike: 7, water: 3, climb: 5 } },
-    { len: 1050, enemies: 0.55, w: { run: 28, hills: 14, gap: 9, boost: 8, loop: 12, gallery: 6, spike: 9, water: 4, climb: 6 } },
-    { len: 1200, enemies: 0.65, w: { run: 22, hills: 10, gap: 8, boost: 7, loop: 16, gallery: 6, spike: 11, water: 4, climb: 7 } },
+  [ // Verde: tramos, bucles, bajadas, pinchos, charcos y mesetas
+    { len: 900, enemies: 0.45, w: { run: 34, hills: 16, gap: 9, boost: 7, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
+    { len: 1050, enemies: 0.55, w: { run: 26, hills: 12, gap: 8, boost: 7, loop: 11, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
+    { len: 1200, enemies: 0.65, w: { run: 20, hills: 9, gap: 7, boost: 6, loop: 14, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
   ],
-  [ // Industrial: cintas, huecos, pinchos, escaladas y mantenimiento subterráneo
-    { len: 950, enemies: 0.5, w: { run: 32, hills: 4, gap: 16, boost: 9, loop: 7, gallery: 6, spike: 9, climb: 7 } },
-    { len: 1100, enemies: 0.6, w: { run: 26, hills: 4, gap: 18, boost: 8, loop: 10, gallery: 7, spike: 11, climb: 8 } },
-    { len: 1250, enemies: 0.7, w: { run: 20, hills: 4, gap: 20, boost: 7, loop: 12, gallery: 8, spike: 13, climb: 9 } },
+  [ // Industrial: cintas, huecos, pinchos, mesetas y mantenimiento subterráneo
+    { len: 950, enemies: 0.5, w: { run: 30, hills: 4, gap: 14, boost: 8, loop: 6, gallery: 6, spike: 9, lift: 8, climb: 5 } },
+    { len: 1100, enemies: 0.6, w: { run: 24, hills: 4, gap: 16, boost: 7, loop: 10, gallery: 7, spike: 11, lift: 9, climb: 7 } },
+    { len: 1250, enemies: 0.7, w: { run: 18, hills: 4, gap: 18, boost: 6, loop: 12, gallery: 8, spike: 13, lift: 10, climb: 8 } },
   ],
-  [ // Acuática: balsas, bucles, pinchos de coral y agua con muelle
-    { len: 1000, enemies: 0.5, w: { run: 26, hills: 10, gap: 18, boost: 5, loop: 8, spike: 7, water: 9, climb: 4 } },
-    { len: 1150, enemies: 0.6, w: { run: 22, hills: 10, gap: 18, boost: 5, loop: 10, spike: 8, water: 11, climb: 6 } },
-    { len: 1300, enemies: 0.7, w: { run: 18, hills: 8, gap: 18, boost: 5, loop: 14, spike: 8, water: 13, climb: 7 } },
+  [ // Acuática: balsas, bucles, pinchos de coral, agua y mesetas
+    { len: 1000, enemies: 0.5, w: { run: 24, hills: 10, gap: 16, boost: 5, loop: 8, spike: 7, water: 9, lift: 6, climb: 4 } },
+    { len: 1150, enemies: 0.6, w: { run: 20, hills: 10, gap: 16, boost: 5, loop: 10, spike: 8, water: 11, lift: 7, climb: 5 } },
+    { len: 1300, enemies: 0.7, w: { run: 16, hills: 8, gap: 16, boost: 5, loop: 14, spike: 8, water: 13, lift: 8, climb: 6 } },
   ],
 ];
 
@@ -109,8 +111,18 @@ export function buildLevel(zi, ai) {
   let x = -10, top = 0, nextCp = 60;
 
   const pushGround = (x0, x1, y1, extra = {}) => S.push({ kind: 'ground', x0, x1, y0: -4, y1, ...extra });
-  // fwd: el muelle conserva la velocidad horizontal al lanzar (vuela hacia delante, no solo arriba)
-  const spring = (sx, y0, fwd = false) => S.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0, y1: y0 + 0.6, power: SPRING_V, squash: 0, fwd });
+  // Muelle: al pisarlo lanza hacia arriba y conserva la velocidad horizontal (el vuelo lleva a la meseta)
+  const spring = (sx, y0) => S.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0, y1: y0 + 0.6, power: SPRING_V, squash: 0 });
+  // Meseta: terreno sólido que sube de golpe hasta top + h y baja después por una rampa hasta la pista
+  const mesa = (wx, h, len, down) => {
+    S.push({ kind: 'ground', x0: wx, x1: wx + len, y0: -4, y1: top + h });
+    S.push({ kind: 'slope', x0: wx + len, x1: wx + len + down, ya: top + h, yb: top, y0: -4, y1: top + h });
+    return wx + len + down;
+  };
+  // Anillos sobre la trayectoria de un muelle (vuelo a la velocidad de carrera); fr son tiempos en segundos
+  const flightRings = (sp, y0, fr) => {
+    for (const t of fr) lv.rings.push({ x: sp + 0.6 + 22 * t, y: y0 + 1.1 + 26 * t - 21 * t * t, taken: false });
+  };
   const boulder = (bx, y0, w = 1.3, h = 1.2) => S.push({ kind: 'block', x0: bx, x1: bx + w, y0, y1: y0 + h });
   const overhang = (ax, base) => S.push({ kind: 'ceiling', x0: ax, x1: ax + 5, y0: base + 2.8, y1: base + 4.1, base });
   const ringArc = (cx, cy, span, count) => {
@@ -153,16 +165,9 @@ export function buildLevel(zi, ai) {
         lv.enemies.push({ x: rnd(x0 + 4, x1 - 6), minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });   // se aleja del borde: no espera junto a los huecos
       }
       if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
-      // Muelles y piedras lejos del final del tramo: un muelle de lado no debe lanzar al jugador sobre el hueco
-      if (len > 32 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 28), top, true);   // lanza hacia delante: el vuelo cae dentro del tramo
+      // Muelles y piedras lejos del final del tramo: el vuelo del muelle cae dentro del tramo
+      if (len > 32 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 28), top);
       if (len > 14 && rng() < 0.18) boulder(rnd(x0 + 4, x1 - 9), top);
-      if (len > 14 && rng() < 0.28) {                  // plataforma alta con muelle debajo
-        const px = rnd(x0 + 2, x1 - 7), pw = rnd(3, 5), py = top + rnd(3.2, 4);
-        S.push({ kind: 'platform', x0: px, x1: px + pw, y0: py - 0.6, y1: py });
-        ringArc(px + pw / 2, py + 1.1, pw, 5);
-        spring(px + 0.3, top);
-        if (rng() < 0.4) boulder(px + 0.5, py);
-      }
       if (len > 20 && rng() < 0.22) {
         let ax = rnd(x0 + 4, x1 - 19);
         const n = rng() < 0.5 ? 1 : 2;
@@ -225,10 +230,11 @@ export function buildLevel(zi, ai) {
 
   // Bajada: un tubo lleva de la superficie a una galería bajo la pista; otro tubo la devuelve arriba.
   // La losa de la superficie queda encima de la galería, así que el atajo es opcional (se puede saltar el pozo).
+  // La galería es un túnel rápido: su suelo entero es franja de aceleración.
   const gallerySec = () => {
     const W = DROP_W, D = DROP_D, yF = top - D;
     const Xs = x + rnd(12, 18);                     // boca de bajada, en la superficie
-    const G = rnd(30, 38);                           // longitud de la galería entre los dos pozos
+    const G = rnd(40, 50);                           // longitud de la galería entre los dos pozos
     const Xr = Xs + W + G;                           // boca de subida, en el suelo de la galería
     pushGround(x, Xs, top);
     ringArc(x + (Xs - x) * 0.5, top + 1.2, 4.5, 5);
@@ -236,15 +242,15 @@ export function buildLevel(zi, ai) {
     const rise = addPath(slidePts(Xr, yF + 0.5, W, D, 1), 'rise');
     pathRings(drop, [0.3, 0.5, 0.7]);
     pathRings(rise, [0.3, 0.5, 0.7]);
-    // Suelo de la galería (franja de aceleración justo antes de la subida)
-    S.push({ kind: 'ground', x0: Xs, x1: Xr - 8, y0: yF - 8, y1: yF, gallery: true });
+    // Suelo de la galería: franja de aceleración de extremo a extremo
+    S.push({ kind: 'ground', x0: Xs, x1: Xr - 8, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
     S.push({ kind: 'ground', x0: Xr - 8, x1: Xr - 1, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
-    S.push({ kind: 'ground', x0: Xr - 1, x1: Xr + W, y0: yF - 8, y1: yF, gallery: true });
+    S.push({ kind: 'ground', x0: Xr - 1, x1: Xr + W, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
     // Losa de la superficie sobre la galería y su techo: no se puede saltar a través de ella
     S.push({ kind: 'ground', x0: Xs + W, x1: Xr, y0: top - 4, y1: top, slab: true });
     S.push({ kind: 'ceiling', x0: Xs + W, x1: Xr, y0: top - 4, y1: top - 3.9, base: top, slabCeil: true });
     lv.galleries.push({ xs: Xs, xr: Xr, w: W, yF, top });
-    ringLine(Xs + W + 2, Xr - 2, yF + 1.2, 6);
+    ringLine(Xs + W + 2, Xr - 2, yF + 1.2, 8);
     if (rng() < 0.6) {
       lv.enemies.push({ x: rnd(Xs + W + 3, Xr - 10), minX: Xs + W + 1, maxX: Xr - 9, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: yF });
     }
@@ -252,63 +258,77 @@ export function buildLevel(zi, ai) {
     x = Xr + W;
   };
 
-  // Zona de peligro con muelle: pinchos o agua entre el muelle y el suelo de llegada.
-  // El muelle, pisado corriendo, lanza al jugador por encima de la franja; una plataforma alta (6.5 sobre la pista)
-  // recoge a quien va en el vuelo. Con galería, un tubo baja bajo los pinchos: el camino sin peligro.
+  // Zona de peligro con muelle: pinchos o agua entre el muelle y una meseta alta (6.5 sobre la pista). El muelle
+  // lanza al jugador por encima de la franja y la meseta lo recibe. Con galería, un tubo baja bajo los pinchos:
+  // es el camino sin peligro.
   const hazardSec = (kind, gallery) => {
     if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
     const wd = rnd(7, 8);                              // ancho de la franja de pinchos o de agua
     const Xs = x + rnd(10, 14);                        // boca de bajada (solo con galería)
     const W = DROP_W, yF = top - DROP_D;
-    const sx = gallery ? Xs + W + 5 : x + rnd(10, 14); // muelle
-    const b0 = sx + 4, b1 = b0 + wd;                   // franja de pinchos o agua
-    const end = sx + 26;                               // suelo de llegada (el vuelo del muelle cae hacia sx + 20)
-    const P = top + 6.5;                               // plataforma alta sobre la franja
+    const sp = gallery ? Xs + W + 5 : x + rnd(10, 14); // muelle
+    const b0 = sp + 4, b1 = b0 + wd;                   // franja de pinchos o agua
     if (gallery) {
+      // Galería bajo la losa; los pinchos quedan sobre la losa y el vuelo del muelle cae en su extremo
+      const end = sp + 30;
       pushGround(x, Xs, top);
       const drop = addPath(slidePts(Xs, top + 0.5, W, DROP_D, -1), 'drop');
       const rise = addPath(slidePts(end, yF + 0.5, W, DROP_D, 1), 'rise');
       pathRings(drop, [0.4, 0.7]);
       pathRings(rise, [0.4, 0.7]);
-      S.push({ kind: 'ground', x0: Xs, x1: end - 8, y0: yF - 8, y1: yF, gallery: true });
+      S.push({ kind: 'ground', x0: Xs, x1: end - 8, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
       S.push({ kind: 'ground', x0: end - 8, x1: end - 1, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
-      S.push({ kind: 'ground', x0: end - 1, x1: end + W, y0: yF - 8, y1: yF, gallery: true });
+      S.push({ kind: 'ground', x0: end - 1, x1: end + W, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
       S.push({ kind: 'ground', x0: Xs + W, x1: end, y0: top - 4, y1: top, slab: true });
       S.push({ kind: 'ceiling', x0: Xs + W, x1: end, y0: top - 4, y1: top - 3.9, base: top, slabCeil: true });
       lv.galleries.push({ xs: Xs, xr: end, w: W, yF, top });
-      spring(sx, top, true);
+      spring(sp, top);
       S.push({ kind: 'spikes', x0: b0, x1: b1, y0: top, y1: top + 1.1 });
+      flightRings(sp, top, [0.25, 0.45, 0.65]);
+      ringArc(b0 + wd / 2, top + 2.4, wd, 3);
       x = end + W;
-    } else {
-      if (kind === 'water') {
-        pushGround(x, b0, top); pushGround(b1, end, top);
-        S.push({ kind: 'water', x0: b0, x1: b1, level: top - 1.4 });
-      } else {
-        pushGround(x, end, top);
-        S.push({ kind: 'spikes', x0: b0, x1: b1, y0: top, y1: top + 1.1 });
-      }
-      spring(sx, top, true);
-      x = end;
+      runSec(rnd(10, 16));                 // la subida deja al jugador en un tramo llano (no en un hueco)
+      return;
     }
-    // Plataforma alta sobre la franja, anillos en la trayectoria del muelle y arco de anillos sobre la franja
-    S.push({ kind: 'platform', x0: sx + 12, x1: sx + 22, y0: P - 0.6, y1: P });
-    ringArc(sx + 17, P + 1.2, 8, 5);
-    for (const t of [0.25, 0.45, 0.65]) lv.rings.push({ x: sx + 22 * t, y: top + 1.1 + 26 * t - 21 * t * t + 0.5, taken: false });
+    if (kind === 'water') {
+      pushGround(x, b0, top);
+      S.push({ kind: 'water', x0: b0, x1: b1, level: top - 1.4 });
+    } else {
+      pushGround(x, b1, top);
+      S.push({ kind: 'spikes', x0: b0, x1: b1, y0: top, y1: top + 1.1 });
+    }
+    spring(sp, top);
+    flightRings(sp, top, [0.25, 0.45, 0.65]);
     ringArc(b0 + wd / 2, top + 2.4, wd, 3);
+    ringArc(b1 + 9, top + 7.7, 6, 5);                  // arco de anillos sobre la meseta
+    x = mesa(b1, 6.5, 26, 10);
   };
 
-  // Escalada en tres niveles: un muelle lanza a una plataforma alta (6.5) y otro, sobre ella, a una más alta (12.5)
-  const climb3Sec = () => {
+  // Muelle y meseta: el muelle lanza al jugador (sin perder velocidad) sobre un terreno de 4 de altura
+  const liftSec = () => {
     if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
-    const s1 = x + rnd(10, 14), s2 = s1 + 22, P1 = top + 6.5, P2 = top + 12.5;
-    pushGround(x, s1 + 48, top);
-    spring(s1, top, true);
-    S.push({ kind: 'platform', x0: s1 + 11, x1: s1 + 25, y0: P1 - 0.6, y1: P1 });
-    spring(s2, P1, true);
-    S.push({ kind: 'platform', x0: s2 + 14, x1: s2 + 24, y0: P2 - 0.6, y1: P2 });
-    ringArc(s1 + 18, P1 + 1.2, 8, 5);
-    ringArc(s2 + 19, P2 + 1.2, 8, 5);
-    x = s1 + 48;
+    const sp = x + rnd(9, 12), wx = sp + WALL;
+    pushGround(x, wx, top);
+    spring(sp, top);
+    flightRings(sp, top, [0.25, 0.45]);
+    ringArc(wx + 9, top + 5.2, 6, 5);
+    x = mesa(wx, 4, 26, 10);
+  };
+
+  // Escalada en dos mesetas: un muelle lleva a una de 4 y otro, sobre ella, a una de 8 que baja a la pista
+  const climbSec = () => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    const sp1 = x + rnd(9, 12), wx1 = sp1 + WALL;
+    const sp2 = wx1 + 18, wx2 = sp2 + WALL;          // el vuelo del primer muelle cae entre los dos muelles
+    pushGround(x, wx1, top);
+    spring(sp1, top);
+    flightRings(sp1, top, [0.25, 0.45]);
+    S.push({ kind: 'ground', x0: wx1, x1: wx2, y0: -4, y1: top + 4 });
+    spring(sp2, top + 4);
+    flightRings(sp2, top + 4, [0.25, 0.45]);
+    ringArc(wx1 + 9, top + 5.2, 6, 5);
+    x = mesa(wx2, 8, 12, 12);
+    ringArc(wx2 + 6, top + 9.2, 6, 5);
   };
 
   // Inicio tranquilo y después secciones según el perfil del acto
@@ -323,7 +343,8 @@ export function buildLevel(zi, ai) {
     else if (r === 'gallery') { gallerySec(); runSec(rnd(10, 16)); }
     else if (r === 'spike') hazardSec('spikes', zi < 2 && rng() < 0.5);
     else if (r === 'water') hazardSec('water', false);
-    else if (r === 'climb') climb3Sec();
+    else if (r === 'lift') liftSec();
+    else if (r === 'climb') climbSec();
   }
   // Meta: suelo liso al final
   pushGround(x, x + 40, top);
