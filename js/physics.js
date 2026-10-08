@@ -67,11 +67,11 @@ function moveEnemy(e, lv, dt) {
   if (e.type !== 'shoot' && e.type !== 'boss') return;
   e.cd -= dt;
   e.face = p.x > e.x ? 1 : -1;                     // se gira hacia el jugador (no cambia la patrulla)
-  const range = e.type === 'boss' ? 30 : 16;
+  const range = e.type === 'boss' ? 30 : 13;
   if (e.cd > 0 || Math.abs(p.x - e.x) > range || Math.abs(p.y - e.y) > 9) return;
   if (e.type === 'shoot') {
     aim(lv, e.x + e.face * 0.9, e.y + 1.0, 8, 0);
-    e.cd = 2.2;
+    e.cd = 2.8;
   } else {
     for (const a of [-0.22, 0, 0.22]) aim(lv, e.x + e.face * 1.8, e.y + 1.9, 9, a);
     e.cd = 2.6;

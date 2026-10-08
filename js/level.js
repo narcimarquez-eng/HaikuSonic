@@ -17,19 +17,19 @@ const WALL = 8.5;             // distancia del muelle al muro de una meseta: a v
 // water: un hueco con agua, con muelle y meseta. lift: muelle y meseta de 4. climb: dos mesetas (4 y 8)
 const PROFILE = [
   [ // Verde: tramos, bucles, bajadas, pinchos, charcos y mesetas
-    { len: 900, enemies: 0.45, fly: 0.1, shoot: 0.08, w: { run: 34, hills: 16, gap: 9, boost: 7, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
-    { len: 1050, enemies: 0.55, fly: 0.14, shoot: 0.12, w: { run: 26, hills: 12, gap: 8, boost: 7, loop: 11, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
-    { len: 1200, enemies: 0.65, fly: 0.18, shoot: 0.16, w: { run: 20, hills: 9, gap: 7, boost: 6, loop: 14, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
+    { len: 900, enemies: 0.45, fly: 0.30, shoot: 0.25, w: { run: 34, hills: 16, gap: 9, boost: 7, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
+    { len: 1050, enemies: 0.55, fly: 0.40, shoot: 0.35, w: { run: 26, hills: 12, gap: 8, boost: 7, loop: 11, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
+    { len: 1200, enemies: 0.65, fly: 0.50, shoot: 0.45, w: { run: 20, hills: 9, gap: 7, boost: 6, loop: 14, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
   ],
   [ // Industrial: cintas, huecos, pinchos, mesetas y mantenimiento subterráneo
-    { len: 950, enemies: 0.5, fly: 0.08, shoot: 0.12, w: { run: 30, hills: 4, gap: 14, boost: 8, loop: 6, gallery: 6, spike: 9, lift: 8, climb: 5 } },
-    { len: 1100, enemies: 0.6, fly: 0.1, shoot: 0.16, w: { run: 24, hills: 4, gap: 16, boost: 7, loop: 10, gallery: 7, spike: 11, lift: 9, climb: 7 } },
-    { len: 1250, enemies: 0.7, fly: 0.12, shoot: 0.2, w: { run: 18, hills: 4, gap: 18, boost: 6, loop: 12, gallery: 8, spike: 13, lift: 10, climb: 8 } },
+    { len: 950, enemies: 0.5, fly: 0.25, shoot: 0.35, w: { run: 30, hills: 4, gap: 14, boost: 8, loop: 6, gallery: 6, spike: 9, lift: 8, climb: 5 } },
+    { len: 1100, enemies: 0.6, fly: 0.30, shoot: 0.45, w: { run: 24, hills: 4, gap: 16, boost: 7, loop: 10, gallery: 7, spike: 11, lift: 9, climb: 7 } },
+    { len: 1250, enemies: 0.7, fly: 0.35, shoot: 0.55, w: { run: 18, hills: 4, gap: 18, boost: 6, loop: 12, gallery: 8, spike: 13, lift: 10, climb: 8 } },
   ],
   [ // Acuática: balsas, bucles, pinchos de coral, agua y mesetas
-    { len: 1000, enemies: 0.5, fly: 0.16, shoot: 0.06, w: { run: 24, hills: 10, gap: 16, boost: 5, loop: 8, spike: 7, water: 9, lift: 6, climb: 4 } },
-    { len: 1150, enemies: 0.6, fly: 0.2, shoot: 0.1, w: { run: 20, hills: 10, gap: 16, boost: 5, loop: 10, spike: 8, water: 11, lift: 7, climb: 5 } },
-    { len: 1300, enemies: 0.7, fly: 0.24, shoot: 0.14, w: { run: 16, hills: 8, gap: 16, boost: 5, loop: 14, spike: 8, water: 13, lift: 8, climb: 6 } },
+    { len: 1000, enemies: 0.5, fly: 0.45, shoot: 0.20, w: { run: 24, hills: 10, gap: 16, boost: 5, loop: 8, spike: 7, water: 9, lift: 6, climb: 4 } },
+    { len: 1150, enemies: 0.6, fly: 0.50, shoot: 0.30, w: { run: 20, hills: 10, gap: 16, boost: 5, loop: 10, spike: 8, water: 11, lift: 7, climb: 5 } },
+    { len: 1300, enemies: 0.7, fly: 0.55, shoot: 0.35, w: { run: 16, hills: 8, gap: 16, boost: 5, loop: 14, spike: 8, water: 13, lift: 8, climb: 6 } },
   ],
 ];
 
@@ -168,8 +168,8 @@ export function buildLevel(zi, ai) {
         const fx0 = rnd(x0 + 4, x1 - 16), fw = rnd(8, 12);
         lv.enemies.push({ type: 'fly', x: fx0, minX: fx0, maxX: fx0 + fw, dir: rng() < 0.5 ? -1 : 1, speed: rnd(2.2, 3.2), base: top + rnd(1.8, 2.4), y: top + 2, phase: rng() * 6, alive: true, inv: 0, r: 0.5 });
       }
-      if (len > 24 && rng() < prof.shoot) {            // torreta en el suelo: dispara al jugador que se acerca
-        const sx = rnd(x0 + 10, x1 - 10);
+      if (len > 30 && rng() < prof.shoot) {            // torreta en el suelo, lejos del inicio del tramo (el punto de control no cae en su alcance)
+        const sx = rnd(x0 + 16, x1 - 10);
         lv.enemies.push({ type: 'shoot', x: sx, minX: sx, maxX: sx, dir: -1, speed: 0, y: top, cd: rnd(0.5, 1.5), phase: 0, alive: true, inv: 0, r: 0.5 });
       }
       if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
