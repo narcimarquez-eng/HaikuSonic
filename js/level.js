@@ -1,6 +1,7 @@
 // Generador de fases: secciones (tramos con objetos, colinas, huecos, bucles, bajadas a una galería subterránea,
 // mesetas con muelle y escaladas)
 import { mulberry32, clamp, lerp, pickWeighted } from './util.js';
+import { makeBot } from './bots.js';
 
 export const ZONE_NAMES = ['Zona Verde', 'Zona Industrial', 'Zona Acuática'];
 export const KILL_Y = [-14, -14, -3.4];
@@ -10,6 +11,10 @@ export const TUBE_R = 1.6;    // radio interior del tubo que rodea la trayectori
 export const SPRING_V = 26;
 export const DROP_W = 6;      // ancho horizontal de una bajada (y de una subida)
 export const DROP_D = 7;      // profundidad de una bajada: hasta el suelo de la galería
+// Robots nuevos por zona: frecuencia en las secciones y pesos al repartir enemigos sueltos (verde, industrial, acuática)
+const ROBOT_RATE = [0.22, 0.4, 0.3];
+const ROBOT_W = [{ shield: 3, bomb: 2, laser: 1 }, { charger: 3, shield: 3, bomb: 3, laser: 1 }, { support: 3, bomb: 2, shield: 1, laser: 1 }];
+const ROBOT_FILL = [{ shield: 2, bomb: 1.5, laser: 0.8 }, { shield: 3, charger: 3, bomb: 2, laser: 0.8 }, { support: 3, bomb: 1.5, shield: 1, laser: 0.8 }];
 const WALL = 8.5;             // distancia del muelle al muro de una meseta: a velocidad de carrera el vuelo la libra
 
 // Cada acto tiene longitud y pesos de sección propios (el agua no deja bajar: el fondo queda bajo el mar).
@@ -106,6 +111,7 @@ export function buildLevel(zi, ai) {
   const lv = {
     zone: zi, act: ai, endX: 0, goalX: 0, goalY: 0, killY: KILL_Y[zi], t: 0,
     solids: [], enemies: [], rings: [], checkpoints: [], paths: [], galleries: [], shots: [], falls: [], items: [],
+    blasts: [], pendingKills: [],
   };
   const S = lv.solids;
   let x = -10, top = 0, nextCp = 60;
@@ -170,7 +176,7 @@ export function buildLevel(zi, ai) {
       }
       if (len > 24 && rng() < prof.fly) {              // dron que patrulla sobre el tramo, a la altura de un salto
         const fx0 = rnd(x0 + 4, x1 - 16), fw = rnd(8, 12);
-        lv.enemies.push({ type: 'fly', x: fx0, minX: fx0, maxX: fx0 + fw, dir: rng() < 0.5 ? -1 : 1, speed: rnd(2.2, 3.2), base: top + rnd(1.8, 2.4), y: top + 2, phase: rng() * 6, alive: true, inv: 0, r: 0.5 });
+        lv.enemies.push({ type: 'fly', x: fx0, minX: fx0, maxX: fx0 + fw, dir: rng() < 0.5 ? -1 : 1, speed: rnd(2.2, 3.2), base: top + rnd(1.4, 1.9), y: top + 1.6, phase: rng() * 6, alive: true, inv: 0, r: 0.7 });
       }
       if (len > 20 && rng() < prof.hop) {              // saltamontes: camina despacio y da saltos por el tramo
         const hx = rnd(x0 + 4, x1 - 10);
@@ -182,7 +188,7 @@ export function buildLevel(zi, ai) {
       }
       if (len > 24 && rng() < prof.wasp) {             // avispa: ondula sobre el tramo y a veces se lanza en picado
         const wx0 = rnd(x0 + 4, x1 - 14), ww = rnd(8, 12), wb = top + rnd(2.2, 3.2);
-        lv.enemies.push({ type: 'wasp', x: wx0, minX: wx0, maxX: wx0 + ww, dir: rng() < 0.5 ? -1 : 1, base: wb, y: wb, mode: 'patrol', diveT: 0, cd: rnd(1, 3), phase: rng() * 6, alive: true, inv: 0, r: 0.45 });
+        lv.enemies.push({ type: 'wasp', x: wx0, minX: wx0, maxX: wx0 + ww, dir: rng() < 0.5 ? -1 : 1, base: wb, y: wb, mode: 'patrol', diveT: 0, cd: rnd(1, 3), phase: rng() * 6, alive: true, inv: 0, r: 0.6 });
       }
       if (len > 30 && rng() < prof.shoot) {            // torreta en el suelo, lejos del inicio del tramo (el punto de control no cae en su alcance)
         const sx = rnd(x0 + 16, x1 - 10);
@@ -190,13 +196,24 @@ export function buildLevel(zi, ai) {
       }
       if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
       if (rng() < 0.1) itemAt(rnd(x0 + 6, x1 - 8), top + 1.3, randItem());
+      if (len > 30 && rng() < ROBOT_RATE[zi]) {          // robot nuevo: escudero, bomba, toro, láser o dron de apoyo
+        const type = pickWeighted(ROBOT_W[zi], rng), ex = rnd(x0 + 6, x1 - 8);
+        const lim = { minX: Math.max(x0 + 2, ex - 5), maxX: Math.min(x1 - 4, ex + 5) };   // patrulla corta: no atraviesa rocas ni muelles
+        if (type === 'support') lv.enemies.push(makeBot('support', ex, top + rnd(1.6, 2.2), rng, lim));
+        else if (type === 'laser') lv.enemies.push(makeBot('laser', ex, top, rng));
+        else lv.enemies.push(makeBot(type, ex, top, rng, lim));
+      }
       // Muelles y piedras lejos del final del tramo: el vuelo del muelle cae dentro del tramo
       if (len > 40 && rng() < 0.22) spring(rnd(x0 + 2, x1 - 34), top);
       if (len > 14 && rng() < 0.18) boulder(rnd(x0 + 4, x1 - 9), top);
       if (len > 20 && rng() < 0.22) {
         let ax = rnd(x0 + 4, x1 - 19);
         const n = rng() < 0.5 ? 1 : 2;
-        for (let i = 0; i < n && ax + 5 <= x1 - 14; i++) { overhang(ax, top); ax += rnd(9, 11); }
+        for (let i = 0; i < n && ax + 5 <= x1 - 14; i++) {
+          overhang(ax, top);
+          if (rng() < 0.5) lv.enemies.push(makeBot('spider', ax + 2.5, top + 1.7, rng, { ceilY: top + 2.8, floorY: top, minX: ax - 4, maxX: ax + 9 }));
+          ax += rnd(9, 11);
+        }
       }
     }
     x = x1;
@@ -287,6 +304,7 @@ export function buildLevel(zi, ai) {
     if (rng() < 0.6) {
       lv.enemies.push({ x: rnd(Xs + W + 3, Xr - 10), minX: Xs + W + 1, maxX: Xr - 9, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: yF });
     }
+    if (rng() < 0.35) lv.enemies.push(makeBot('spider', rnd(Xs + W + 3, Xr - 4), yF + 1.9, rng, { ceilY: top - 4, floorY: yF, minX: Xs + W, maxX: Xr }));
     if (rng() < 0.5) boulder(rnd(Xs + W + 6, Xr - 14), yF);
     x = Xr + W;
   };
@@ -489,14 +507,18 @@ export function buildLevel(zi, ai) {
     const y = s.y1, dir = r() < 0.5 ? -1 : 1, phase = r() * 6;
     const base = { x: ex, minX: Math.max(s.x0 + 2, ex - 4), maxX: Math.min(s.x1 - 3, ex + 4), dir, y, phase, alive: true, inv: 0, r: 0.5 };
     switch (type) {
-      case "fly": return { ...base, type, base: y + 1.8 + r() * 0.6, y: y + 2, speed: 2.4 + r() * 0.6 };
-      case "wasp": return { ...base, type, minX: ex - 6, maxX: ex + 6, r: 0.45, base: y + 2.2 + r(), y: y + 2.6, mode: "patrol", diveT: 0, cd: 1 + r() * 2 };
+      case "fly": return { ...base, type, base: y + 1.4 + r() * 0.5, y: y + 1.6, speed: 2.4 + r() * 0.6, r: 0.7 };
+      case "wasp": return { ...base, type, minX: ex - 6, maxX: ex + 6, r: 0.6, base: y + 2.2 + r(), y: y + 2.6, mode: "patrol", diveT: 0, cd: 1 + r() * 2 };
       case "hop": return { ...base, type, cd: 0.5 + r() * 1.5, air: false, yv: 0, hv: 0 };
       case "spiny": return { ...base, type, spiky: true, speed: 1.6 + r() * 0.6 };
       case "shoot": return { type, x: ex, minX: ex, maxX: ex, dir: -1, speed: 0, y, cd: 1 + r() * 1.5, phase: 0, alive: true, inv: 0, r: 0.5 };
-      case "housefly": return { ...base, type, ax: ex, minX: ex - 5, maxX: ex + 5, speed: 2.2 + r() * 0.8, base: y + 1.1 + r() * 0.5, y: y + 1.4, r: 0.4 };
+      case "housefly": return { ...base, type, ax: ex, minX: ex - 5, maxX: ex + 5, speed: 2.2 + r() * 0.8, base: y + 1.1 + r() * 0.5, y: y + 1.4, r: 0.55 };
       case "worm": return { ...base, type, up: 0, st: "hide", t: 0.5 + r() * 2.5, base: y };
       case "beetle": return { ...base, type, speed: 2.4 + r() * 0.8 };
+      case "shield": case "charger": case "bomb":
+        return makeBot(type, ex, y, r, { minX: Math.max(s.x0 + 2, ex - 4), maxX: Math.min(s.x1 - 3, ex + 4) });
+      case "laser": return makeBot("laser", ex, y, r);
+      case "support": return makeBot("support", ex, y + 1.6 + r() * 0.6, r, { minX: Math.max(s.x0 + 2, ex - 5), maxX: Math.min(s.x1 - 3, ex + 5) });
       default: return base;
     }
   };
@@ -509,15 +531,15 @@ export function buildLevel(zi, ai) {
   const enemyNear = (ex) => lv.enemies.some((e) => Math.abs(e.x - ex) < 9);
   for (let c = 60; c < stopX; c += 100) {
     const cEnd = Math.min(c + 100, stopX);
-    for (let tries = 0, have = lv.enemies.filter((e) => e.x >= c && e.x < cEnd).length; have < 6 && tries < 160; tries++) {
+    for (let tries = 0, have = lv.enemies.filter((e) => e.x >= c && e.x < cEnd).length; have < 6 && tries < 1500; tries++) {
       const ex = c + (cEnd - c) * rng();
       // Bichos de cada zona: gusanos y escarabajos en la verde, escarabajos en la industrial, moscas sobre el agua
       const bugs = { worm: zi === 0 ? 4 : 0, beetle: zi === 1 ? 5 : zi === 0 ? 3 : 0, housefly: zi === 2 ? 4 : 2 };
-      const type = pickWeighted({ walk: 4, fly: prof.fly * 6, wasp: prof.wasp * 5, hop: prof.hop * 8, spiny: prof.spiny * 8, shoot: prof.shoot * 8, ...bugs }, rng);
-      const flying = type === "fly" || type === "wasp" || type === "housefly";
+      const type = pickWeighted({ walk: 4, fly: prof.fly * 6, wasp: prof.wasp * 5, hop: prof.hop * 8, spiny: prof.spiny * 8, shoot: prof.shoot * 8, ...bugs, ...ROBOT_FILL[zi] }, rng);
+      const flying = type === "fly" || type === "wasp" || type === "housefly" || type === "support";
       const s = flat.find((q) => ex >= q.x0 + 3 && ex <= q.x1 - 3);
       if (!flying && !s) continue;
-      if (type === "shoot" && (!s || ex - s.x0 < 16)) continue;
+      if ((type === "shoot" || type === "laser") && (!s || ex - s.x0 < 16)) continue;
       if (enemyNear(ex) || trapNear(ex - 4, ex + 4)) continue;
       const seg = flying ? { x0: ex - 4, x1: ex + 4, y1: laneY(S, ex) } : s;
       lv.enemies.push(placeEnemy(type, ex, seg, rng));

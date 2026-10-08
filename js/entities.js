@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RING_GEO, UNIT_BOX, UNIT_CYL, UNIT_SPHERE, addBox, mesh } from './geo.js';
 import { ACCENT, ENEMY_COL } from './backdrop.js';
 import { MODELS } from './models.js';
+import { buildRobots, updateRobots } from './robots.js';
 
 const MAX_SCATTER = 60;
 const ENEMY_SCALE = 1.1;
@@ -138,6 +139,7 @@ export function buildEntities(lv, zi, chunkOf, root) {
 
   // Drones, torretas y jefes: cada pieza de su modelo de Blender es una malla instanciada por tipo
   E.models = [];
+  E.robots = buildRobots(lv, zi, root);
   for (const [type, name] of Object.entries(MODEL_OF)) {
     const list = lv.enemies.filter((e) => e.type === type);
     if (list.length) E.models.push({ list, parts: modelParts(name, type, zi, list.length, root) });
@@ -195,6 +197,7 @@ export function updateEntities(E, lv, t, dt) {
   // Enemigos: según el sentido usan la malla derecha o la especular; ruedas y antenas se giran igual
   let cR = 0, cL = 0;
   lv.enemies.forEach((e) => {
+    if (e.type) return;                                   // los tipos con nombre tienen su propio dibujo
     const left = e.dir < 0, sg = left ? -1 : 1;
     const set = left ? E.L : E.R, k = left ? cL++ : cR++;
     const sc = e.alive ? ENEMY_SCALE : 0;
@@ -267,5 +270,6 @@ export function updateEntities(E, lv, t, dt) {
     });
     set.im.instanceMatrix.needsUpdate = true;
   }
+  updateRobots(E.robots, t);
   E.goalOrb.rotation.y = t * 2;
 }

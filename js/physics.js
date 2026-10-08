@@ -2,6 +2,7 @@
 import { input, isJumpHeld, readAxisX, readDown } from './input.js';
 import { slopeAt, pathAt, laneY } from './level.js';
 import { approach, clamp } from './util.js';
+import { BLAST_R, beamOf, stepBot, updateShields, verdict } from './bots.js';
 
 export const STEP = 1 / 120;      // paso fijo de física (estable a cualquier FPS)
 export const LEVELS = 9;          // 3 zonas × 3 actos
@@ -56,6 +57,13 @@ function hitEnemy(e, y) {
   }
   e.alive = false;
   G.fx.push({ x: e.x, y });
+}
+
+// Rebote del jugador al tocar un enemigo sin destruirlo: arriba si lo pisa, de lado si lo toca
+function knock(e, p, stomp) {
+  if (stomp) { p.vy = 10; p.grounded = false; p.groundSolid = null; return; }
+  p.vx = (p.x >= e.x ? 1 : -1) * 7; p.vy = Math.max(p.vy, 5);
+  p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0;
 }
 
 // Proyectil hacia el jugador desde (sx, sy), con un desvío de a radianes
@@ -176,6 +184,9 @@ function moveEnemy(e, lv, dt) {
     case 'worm': worm(e, dt); break;
     case 'shoot': patrol(e, 0, dt); fire(e, lv, dt); break;
     case 'boss': patrol(e, e.speed, dt); fire(e, lv, dt); break;
+    case 'shield': case 'bomb': case 'spider': case 'charger': case 'laser': case 'support':
+      stepBot(e, lv, dt, lv.t, player);
+      break;
     default: patrol(e, e.speed ?? 2.2, dt);        // caminantes y erizos
   }
 }
@@ -431,7 +442,8 @@ export function stepWorld(dt) {
     }
   }
 
-  // Enemigos: destruidos al rodar, al girar en el aire o al pisarlos; te hieren si los tocas de otro modo
+  // Enemigos: cada contacto lo decide la regla de su tipo (verdict de bots.js): destruir, rebotar, dañar o nada
+  updateShields(lv);
   for (const e of lv.enemies) {
     if (!e.alive) continue;
     moveEnemy(e, lv, dt);
@@ -443,21 +455,45 @@ export function stepWorld(dt) {
     const stomp = p.vy < 0 && p.y - PH / 2 > ey;          // cae sobre él
     const roll = p.rolling || p.dashT > 0 || p.starT > 0; // rueda, carga o va con estrella
     const spin = p.spinAir && !p.grounded;                // gira en el aire (un salto o un muelle)
-    if (e.spiky) {                                        // erizo: solo lo destruye rodar o cargar
-      if (roll && !(e.inv > 0)) hitEnemy(e, ey);
-      else { hurt(); if (G.mode !== 'play') return; }
+    if (e.type === 'boss') {
+      // Un jefe recién golpeado solo rebota al jugador al pisarlo; cualquier otro contacto hace daño
+      const hit = stomp || roll || spin;
+      if (hit && (!(e.inv > 0) || stomp)) {
+        if (!(e.inv > 0)) hitEnemy(e, ey);
+        if (stomp) { p.vy = 10; p.grounded = false; p.groundSolid = null; }
+        else if (!p.grounded) p.vy = Math.max(p.vy, 7);    // el giro en el aire rebota un poco
+      } else { hurt(); if (G.mode !== 'play') return; }
       continue;
     }
-    const hit = stomp || roll || spin;
-    // Un jefe recién golpeado solo rebota al jugador al pisarlo; cualquier otro contacto hace daño
-    if (hit && (!(e.inv > 0) || stomp)) {
-      if (!(e.inv > 0)) hitEnemy(e, ey);
-      if (stomp) { p.vy = 10; p.grounded = false; p.groundSolid = null; }
-      else if (!p.grounded) p.vy = Math.max(p.vy, 7);    // el giro en el aire rebota un poco
-    } else {
-      hurt();
-      if (G.mode !== 'play') return;
+    const v = verdict(e, p, { stomp, roll, spin, star: p.starT > 0 });
+    if (v === 'ignore') continue;
+    if (v === 'hurt') { hurt(); if (G.mode !== 'play') return; continue; }
+    if (v === 'bounce') { knock(e, p, stomp); continue; }
+    if (v === 'blast') { lv.blasts.push({ x: e.x, y: e.y + 0.4, r: BLAST_R }); e.alive = false; continue; }
+    if (v === 'kill') hitEnemy(e, ey);
+    else { e.alive = false; G.score += 100; G.fx.push({ x: e.x, y: ey, n: 10, pal: 0 }); }   // 'defuse': sin explosión
+    if (stomp) { p.vy = 10; p.grounded = false; p.groundSolid = null; }
+    else if (!p.grounded) p.vy = Math.max(p.vy, 7);      // el giro en el aire rebota un poco
+  }
+  // Explosiones de las bombas: destruyen a los enemigos cercanos (las bombas cercanas explotan en cadena) y dañan al
+  // jugador si está dentro. Los aplastados por un toro en su carga caen también
+  while (lv.blasts.length) {
+    const b = lv.blasts.shift();
+    G.fx.push({ x: b.x, y: b.y, n: 22, pal: 0 });
+    for (const e of lv.enemies) {
+      if (!e.alive || Math.hypot(e.x - b.x, e.y - b.y) > b.r) continue;
+      if (e.type === 'bomb') { if (e.st === 'idle') { e.st = 'fuse'; e.fuse = 0.25; } }
+      else if (e.type !== 'boss') hitEnemy(e, e.y + 0.4);
     }
+    if (Math.hypot(p.x - b.x, p.y - b.y) < b.r) { hurt(); if (G.mode !== 'play') return; }
+  }
+  for (const e of lv.pendingKills.splice(0)) if (e.alive && e.type !== 'boss') hitEnemy(e, e.y + 0.4);
+  // Láseres: el rayo hiere al jugador si pasa muy cerca de él (los bloques de piedra lo cortan)
+  for (const e of lv.enemies) {
+    if (e.type !== 'laser' || !e.alive) continue;
+    const b = beamOf(e, lv);
+    const s = clamp((p.x - b.ox) * b.dx + (p.y - b.oy) * b.dy, 0, b.len);
+    if (Math.hypot(p.x - (b.ox + b.dx * s), p.y - (b.oy + b.dy * s)) < 0.4) { hurt(); if (G.mode !== 'play') return; }
   }
   // Disparos: vuelan en línea recta y hieren al jugador al tocarlos
   for (let i = lv.shots.length - 1; i >= 0; i--) {
