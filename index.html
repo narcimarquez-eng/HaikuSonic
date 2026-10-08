@@ -164,9 +164,9 @@ const RIGHT_KEYS = ['ArrowRight', 'KeyD'], LEFT_KEYS = ['ArrowLeft', 'KeyA'], DO
 
 const ZONES = [
   { name: 'Zona Verde', decor: 'green', killY: -14, water: false,
-    skyTop: 0x4fa8ff, skyBottom: 0xd6f0ff, fog: 0xbfe6ff, accent: 0xffd24a, enemy: 0xd32f2f },
+    skyTop: 0x4fa8ff, skyBottom: 0xd6f0ff, fog: 0xc4e8ff, accent: 0xffd24a, enemy: 0xd32f2f },
   { name: 'Zona Industrial', decor: 'industrial', killY: -14, water: false,
-    skyTop: 0x2d2456, skyBottom: 0xe0834a, fog: 0x6a4c6e, accent: 0xff9800, enemy: 0x8e24aa },
+    skyTop: 0x2d2456, skyBottom: 0xe0834a, fog: 0x7a5a78, accent: 0xff9800, enemy: 0x8e24aa },
   { name: 'Zona Acuática', decor: 'water', killY: -3.4, water: true,
     skyTop: 0x2c8fe0, skyBottom: 0xcdf5ff, fog: 0x9be3f2, accent: 0x00e5ff, enemy: 0xff7043 },
 ];
@@ -183,6 +183,7 @@ function mulberry32(seed) {
   };
 }
 const approach = (v, target, maxDelta) => (v < target ? Math.min(v + maxDelta, target) : Math.max(v - maxDelta, target));
+const smooth = (e0, e1, v) => { const t = Math.min(1, Math.max(0, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const std = (color, roughness = 0.6, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
@@ -273,9 +274,9 @@ function zoneTex(zi) {
         g.fillStyle = '#d6dee4'; g.beginPath(); g.arc(cx - 1, cy - 1, 1.5, 0, 7); g.fill();
       }
     });
-    T.dirt = makeTex((g, s) => {
-      g.fillStyle = '#5a646c'; g.fillRect(0, 0, s, s);
-      speckle(g, s, rnd, 1000, ['#48525a', '#6f7a83', '#3a434b'], 1, 3, 0.7);
+    T.dirt = makeTex((g, s) => {             // hormigón de patio
+      g.fillStyle = '#5f6970'; g.fillRect(0, 0, s, s);
+      speckle(g, s, rnd, 1100, ['#4a535b', '#748089', '#3a434b'], 1, 3, 0.7);
       g.strokeStyle = 'rgba(15,20,25,.35)'; g.lineWidth = 1.5;
       for (let i = 0; i < 10; i++) { let x = rnd() * s, y = rnd() * s; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 4; k++) { x += (rnd() - 0.5) * 40; y += (rnd() - 0.5) * 40; g.lineTo(x, y); } g.stroke(); }
     });
@@ -298,7 +299,6 @@ function zoneTex(zi) {
       }
     });
     T.hill = T.plank;
-    T.bark = T.plank;
     T.foliage = T.plank;
   } else {                   // Acuática: arena, arenisca, roca
     T.grass = makeTex((g, s) => {
@@ -358,11 +358,27 @@ function cyl(parent, mat, x, y, z, r, len, alongX = false) {
   m.castShadow = true; m.receiveShadow = true;
   parent.add(m); return m;
 }
-// Púa: cono alargado que apunta en la dirección (-sin a, cos a)
+// Cono (copa de árbol): base en el centro, altura len
+function cone(parent, mat, x, y, z, r, len) {
+  const m = new THREE.Mesh(UNIT_CONE, mat);
+  m.position.set(x, y, z); m.scale.set(r, len, r);
+  m.castShadow = true;
+  parent.add(m); return m;
+}
+// Púa del erizo: cono que apunta en la dirección (-sin a, cos a)
 function spike(parent, mat, cx, cy, r, len, a) {
   const m = new THREE.Mesh(UNIT_CONE, mat);
   m.position.set(cx, cy, 0); m.scale.set(r, len, r); m.rotation.z = a;
   m.castShadow = true;
+  parent.add(m); return m;
+}
+// Prisma extruido a lo largo de z a partir de un polígono en XY (para rampas)
+function prism(parent, pts, zStart, depth, mat) {
+  const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
+  geo.translate(0, 0, zStart);
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = true; m.receiveShadow = true;
   parent.add(m); return m;
 }
 
@@ -380,7 +396,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xbfe6ff, 60, 230);
+scene.fog = new THREE.Fog(0xc4e8ff, 70, 240);
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 400);
 
 // Entorno de reflejos (IBL): da brillos realistas a metal y plástico
@@ -494,164 +510,387 @@ bindHold(document.getElementById('jump'), () => { input.touchJump = true; input.
 bindHold(document.getElementById('spin'), () => { input.touchSpin = true; input.spinPressed = true; }, () => { input.touchSpin = false; });
 
 /* ============================================================
-   Generación procedural de niveles (semilla fija por nivel)
-   Sólidos: 'ground' y 'spring' bloquean por los lados;
-            'platform' (y móviles) son plataformas de una cara.
+   Terreno y geometría de la pista
+   Sólidos:
+     'ground'   suelo plano (y1 = altura de la superficie), bloquea por los lados
+     'slope'    rampa de ya a yb entre x0 y x1, se puede subir y bajar
+     'spring'   muelle sobre el suelo, bloquea por los lados
+     'platform' plataforma de una cara (se salta desde abajo)
    ============================================================ */
+const slopeAt = (s, x) => s.ya + (s.yb - s.ya) * Math.min(1, Math.max(0, (x - s.x0) / (s.x1 - s.x0)));
+
+// Altura de la superficie bajo el jugador en la coordenada x
+function laneY(solids, x) {
+  for (const s of solids) {
+    if (s.kind === 'platform' || s.kind === 'spring') continue;
+    if (x < s.x0 || x > s.x1) continue;
+    return s.kind === 'slope' ? slopeAt(s, x) : s.y1;
+  }
+  return 0;   // hueco: el fondo queda al nivel de la hierba
+}
+
 function buildLevel(n) {
-  const zoneIdx = Math.floor(n / 3);
-  const act = n % 3;
+  const zoneIdx = Math.floor(n / 3), act = n % 3;
   const rng = mulberry32(1337 + n * 9973);
   const rnd = (a, b) => a + (b - a) * rng();
   const length = 160 + act * 40 + zoneIdx * 20;
   const lv = {
-    n, zoneIdx, act, length, goalX: length, killY: ZONES[zoneIdx].killY,
+    n, zoneIdx, act, length, endX: 0, goalX: 0, goalY: 0, killY: ZONES[zoneIdx].killY,
     t: 0, solids: [], enemies: [], rings: [], scatter: [], checkpoints: [],
   };
+  const S = lv.solids;
 
-  const ground = (x0, x1) => lv.solids.push({ kind: 'ground', x0, x1, y0: -4, y1: 0 });
   const ringArc = (cx, cy, span, count) => {
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
       lv.rings.push({ x: cx - span / 2 + span * t, y: cy + Math.sin(t * Math.PI) * 0.9, taken: false });
     }
   };
-  const mover = (base, y) => lv.solids.push({
+  const mover = (base, y) => S.push({
     kind: 'platform', mover: true, base, amp: rnd(2, 4), speed: rnd(0.6, 1.1), ph: rng() * 6,
     w: 3.2, cx: base, prevCx: base, x0: base - 1.6, x1: base + 1.6, y0: y - 0.5, y1: y,
   });
+  // Tramo plano: suelo + enemigos, anillos, muelles y plataformas altas
+  const flat = (x0, x1, top, quiet = false) => {
+    S.push({ kind: 'ground', x0, x1, y0: -4, y1: top });
+    const len = x1 - x0;
+    if (!quiet) {
+      if (len > 10 && rng() < 0.55) {
+        lv.enemies.push({ x: rnd(x0 + 4, x1 - 4), minX: x0 + 1, maxX: x1 - 1, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });
+      }
+      if (rng() < 0.5) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
+      if (len > 8 && rng() < 0.22) {
+        const sx = rnd(x0 + 2, x1 - 3);
+        S.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0: top, y1: top + 0.6, power: SPRING_V, squash: 0 });
+      }
+      if (len > 10 && rng() < 0.3) {
+        const px = rnd(x0 + 2, x1 - 7), pw = rnd(3, 5), py = top + rnd(3.2, 4);
+        S.push({ kind: 'platform', x0: px, x1: px + pw, y0: py - 0.6, y1: py });
+        ringArc(px + pw / 2, py + 1.1, pw, 5);
+        S.push({ kind: 'spring', x0: px + 0.3, x1: px + 1.5, y0: top, y1: top + 0.6, power: SPRING_V, squash: 0 });
+      }
+      if (len > 12 && rng() < 0.3) mover(rnd(x0 + 4, x1 - 4), top + rnd(1.8, 2.6));
+    }
+  };
+  // Rampa de cambio de altura con anillos siguiendo la pendiente
+  const slope = (x0, x1, ya, yb) => {
+    S.push({ kind: 'slope', x0, x1, ya, yb, y0: -4, y1: Math.max(ya, yb) });
+    for (let i = 0; i < 4; i++) {
+      const x = x0 + (x1 - x0) * (0.2 + i * 0.2);
+      lv.rings.push({ x, y: slopeAt({ x0, x1, ya, yb }, x) + 1.3, taken: false });
+    }
+  };
 
-  ground(-10, 12);
-  let x = 12, nextCp = 45;
+  flat(-10, 14, 0, true);
+  let x = 14, cy = 0, nextCp = 50;
   while (x < length) {
-    const seg = rnd(7, 14);
-    const x0 = x, x1 = x + seg;
-    ground(x0, x1);
-
-    if (x1 > nextCp) { lv.checkpoints.push({ x: x0 + 1.5, hit: false }); nextCp = x1 + 45; }
-    if (seg > 8 && rng() < 0.55) {
-      lv.enemies.push({ x: rnd(x0 + 3, x1 - 3), minX: x0 + 1, maxX: x1 - 1, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6 });
-    }
-    if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 5), 1.2, 4.5, 5);
-    if (rng() < 0.2) {
-      const sx = rnd(x0 + 2, x1 - 3);
-      lv.solids.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0: 0, y1: 0.6, power: SPRING_V, squash: 0 });
-    }
-
-    x = x1;
+    const seg = rnd(14, 30);
+    flat(x, x + seg, cy);
+    if (x + seg > nextCp) { lv.checkpoints.push({ x: x + 1.5, y: cy, hit: false }); nextCp = x + seg + 50; }
+    x += seg;
     if (x >= length) break;
-
-    if (rng() < 0.65) {                       // hueco
+    const t = rng();
+    if (t < 0.4) {                                  // hueco, con puente opcional
       const gap = rnd(2.8, 4.4);
-      if (rng() < 0.7) {                      // plataforma sobre el hueco
-        const py = rnd(1.4, 2.0);
-        lv.solids.push({ kind: 'platform', x0: x1 - 0.8, x1: x1 + gap + 0.8, y0: py - 0.5, y1: py });
-        ringArc(x1 + gap / 2, py + 1.2, gap, 4);
+      if (rng() < 0.6) {
+        const py = cy + rnd(1.6, 2.2);
+        S.push({ kind: 'platform', x0: x - 0.8, x1: x + gap + 0.8, y0: py - 0.6, y1: py });
+        ringArc(x + gap / 2, py + 1.2, gap, 4);
       }
       x += gap;
+    } else if (t < 0.75) {                          // rampa hacia otra altura
+      const ny = Math.min(3.2, Math.max(0, cy + (rng() < 0.5 ? -1 : 1) * rnd(1.2, 2.2)));
+      if (Math.abs(ny - cy) > 0.3) {
+        const len = rnd(9, 13);
+        slope(x, x + len, cy, ny);
+        x += len; cy = ny;
+      }
     }
-    if (rng() < 0.35) {                       // plataforma alta, con muelle en el suelo
-      const px = x + rnd(1.5, 3.5), pw = rnd(3, 5), py = rnd(3.4, 4.2);
-      lv.solids.push({ kind: 'platform', x0: px, x1: px + pw, y0: py - 0.5, y1: py });
-      ringArc(px + pw / 2, py + 1.1, pw, 5);
-      lv.solids.push({ kind: 'spring', x0: px + 0.2, x1: px + 1.4, y0: 0, y1: 0.6, power: SPRING_V, squash: 0 });
-    }
-    if (rng() < 0.3) mover(x + rnd(2, 6), rnd(1.6, 2.4));
   }
-  if (x < length + 20) ground(x, length + 20);   // suelo hasta después de la meta
+  flat(x, x + 30, cy);
+  lv.goalX = x + 8; lv.goalY = cy;
+  lv.endX = x + 30;
   return lv;
 }
 
 /* ============================================================
-   Visuales de nivel: materiales con texturas por zona
+   Terreno de fondo: continúa la superficie de la pista hacia
+   el fondo y se eleva en colinas (zona verde), se mantiene plano
+   (industrial) o baja al fondo marino con islas (acuática)
    ============================================================ */
+const BD_ROWS = [0, 0.4, 0.9, 1.5, 2.2, 3, 4, 5.2, 6.6, 8.2, 10, 12, 14.5, 17, 20, 24, 28, 33, 39, 46, 54, 63, 73, 84, 96];
+const LANE_Z = -2.2;   // borde trasero de la pista
+
+function bgHeight(kind, lane, x, d) {
+  let h = lane * Math.exp(-d / 4);            // se funde con la altura de la pista
+  if (kind === 'green') {
+    h += 5 * smooth(3, 18, d) * (Math.sin(x * 0.045 + d * 0.09) * 0.6 + Math.sin(x * 0.11 - d * 0.13 + 1.3) * 0.4);
+  } else if (kind === 'industrial') {
+    h += 0.3 * smooth(3, 10, d) * Math.sin(x * 0.05 + d * 0.1);
+  } else {
+    h -= 3.4 * smooth(2, 8, d);                // fondo marino
+    h += 6 * smooth(12, 22, d) * Math.max(0, Math.sin(x * 0.07 + d * 0.05) * Math.sin(x * 0.031 - d * 0.04));
+  }
+  return h;
+}
+
+function buildBackdrop(lv, zone, T, g) {
+  const kind = zone.decor, S = lv.solids;
+  const rnd = mulberry32(lv.n * 31 + 7);
+  const H = (x, d) => bgHeight(kind, laneY(S, x), x, d);
+  const x0 = -60, x1 = lv.endX + 90;
+
+  // Malla del terreno: columnas cada 1.5 unidades, filas cada vez más separadas
+  const xs = [];
+  for (let x = x0; x <= x1; x += 1.5) xs.push(x);
+  const nx = xs.length, lanes = xs.map((x) => laneY(S, x));
+  const pos = [], uv = [], col = [], idx = [];
+  BD_ROWS.forEach((d) => xs.forEach((x, i) => {
+    pos.push(x, bgHeight(kind, lanes[i], x, d), LANE_Z - d);
+    uv.push(x / 4, d / 4);
+    const shade = 1 - 0.35 * smooth(6, 60, d);   // se oscurece con la distancia
+    col.push(shade, shade, shade);
+  }));
+  for (let j = 0; j < BD_ROWS.length - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = j * nx + i, b = a + 1, c = a + nx, e = c + 1;
+    idx.push(a, b, c, b, e, c);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const mapTex = kind === 'green' ? T.grass : T.dirt;
+  const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tiled(mapTex, 1, 1), vertexColors: true, roughness: 0.95 }));
+  terrain.receiveShadow = true;
+  g.add(terrain);
+
+  // Decoración repartida sobre el terreno, a su altura real
+  const chimneys = [];
+  const spots = [];
+  for (let x = x0 + rnd() * 4; x < x1; x += 4 + rnd() * 5) spots.push({ x: x + (rnd() - 0.5) * 2, d: 6 + rnd() * 40 });
+
+  if (kind === 'green') {
+    const bark = new THREE.MeshStandardMaterial({ map: tiled(T.bark, 1, 3), roughness: 0.9 });
+    const leaf = new THREE.MeshStandardMaterial({ map: tiled(T.leaf, 1, 1), roughness: 0.85 });
+    const rock = new THREE.MeshStandardMaterial({ color: 0x8c8a84, roughness: 0.95 });
+    for (const sp of spots) {
+      const y = H(sp.x, sp.d), r = rnd();
+      const s = 0.8 + rnd() * 0.7;
+      const t = new THREE.Group(); t.position.set(sp.x, y, LANE_Z - sp.d); t.scale.setScalar(s);
+      g.add(t);
+      if (r < 0.42) {                                   // árbol redondo
+        cyl(t, bark, 0, 1.7, 0, 0.22, 3.4);
+        sph(t, leaf, -0.3, 3.9, 0, 1.5);
+        sph(t, leaf, 0.9, 4.3, 0.3, 1.1);
+        sph(t, leaf, -0.6, 4.9, -0.2, 0.9);
+      } else if (r < 0.72) {                            // pino escalonado
+        cyl(t, bark, 0, 1.2, 0, 0.18, 2.4);
+        cone(t, leaf, 0, 2.6, 0, 1.5, 2.6);
+        cone(t, leaf, 0, 3.9, 0, 1.15, 2.2);
+        cone(t, leaf, 0, 5.1, 0, 0.75, 1.8);
+      } else if (r < 0.9) {                             // matorral
+        sph(t, leaf, 0, 0.7, 0, 1.0, 0.7, 0.9);
+        sph(t, leaf, 1.0, 0.5, 0.4, 0.7, 0.5, 0.6);
+        sph(t, leaf, -0.9, 0.5, -0.2, 0.75, 0.55, 0.7);
+      } else {                                          // roca
+        const rk = new THREE.Mesh(UNIT_ROCK, rock);
+        rk.position.set(0, 0.6, 0); rk.scale.setScalar(1.1 + rnd() * 0.8);
+        rk.castShadow = true; t.add(rk);
+      }
+    }
+  } else if (kind === 'industrial') {
+    const side = std(0x4a5560, 0.7), roof = std(0x2b323a, 0.8), steel = std(0x7f8b96, 0.45, 0.7);
+    const tank = std(0x9aa7b2, 0.4, 0.6), pipeM = std(0x6e7c88, 0.35, 0.8);
+    const glowM = new THREE.MeshStandardMaterial({ color: 0xffb74d, emissive: 0xff9800, emissiveIntensity: 0.9 });
+    for (const sp of spots) {
+      const y = H(sp.x, sp.d), r = rnd(), zb = LANE_Z - sp.d;
+      if (r < 0.5) {                                    // nave con ventanas y chimenea
+        const w = 6 + rnd() * 6, h = 7 + rnd() * 12, dp = 5 + rnd() * 3;
+        const win = new THREE.MeshStandardMaterial({ map: tiled(T.leaf, w / 4, h / 4), roughness: 0.6, emissive: 0x2a1600, emissiveIntensity: 0.25 });
+        addBox(g, [side, side, roof, side, win, side], sp.x, y + h / 2, zb, w, h, dp);
+        addBox(g, steel, sp.x + w * 0.2, y + h + 0.35, zb, w * 0.35, 0.7, dp * 0.5);
+        if (rnd() < 0.7) {
+          const top = 4 + rnd() * 5, cxp = sp.x - w * 0.25;
+          cyl(g, steel, cxp, y + h + top / 2, zb, 0.5, top);
+          chimneys.push({ x: cxp, y: y + h + top + 0.4, z: zb });
+        }
+      } else if (r < 0.7) {                             // depósito cilíndrico
+        cyl(g, tank, sp.x, y + 2.5, zb, 2.2, 5);
+        cyl(g, steel, sp.x, y + 5.1, zb, 2.25, 0.25);
+      } else if (r < 0.85) {                            // tubería sobre pilares
+        cyl(g, pipeM, sp.x + 6, y + 4.5, zb, 0.25, 12, true);
+        addBox(g, steel, sp.x, y + 2.2, zb, 0.4, 4.4, 0.4);
+        addBox(g, steel, sp.x + 12, y + 2.2, zb, 0.4, 4.4, 0.4);
+        addBox(g, glowM, sp.x + 6, y + 4.8, zb + 0.3, 0.6, 0.2, 0.2);
+      }
+    }
+  } else {
+    const rock = new THREE.MeshStandardMaterial({ map: tiled(T.plank, 1, 1), roughness: 0.9 });
+    const leaf = new THREE.MeshStandardMaterial({ map: tiled(T.leaf, 2, 2), roughness: 0.85 });
+    const trunk = new THREE.MeshStandardMaterial({ map: tiled(T.bark, 1, 2), roughness: 0.9 });
+    let palms = 0;
+    for (const sp of spots) {
+      const y = H(sp.x, sp.d), r = rnd();
+      if (y > -1.2 && palms < 14) {                     // palmera en isla
+        palms++;
+        const t = new THREE.Group(); t.position.set(sp.x, y, LANE_Z - sp.d); g.add(t);
+        cyl(t, trunk, 0, 2.0, 0, 0.16, 4);
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2;
+          const fr = sph(t, leaf, Math.cos(a) * 1.1, 4.2, Math.sin(a) * 0.5, 1.4, 0.16, 0.42);
+          fr.rotation.y = -a; fr.rotation.z = 0.35;
+        }
+      } else if (r < 0.5) {                             // roca de fondo marino
+        const rk = new THREE.Mesh(UNIT_ROCK, rock);
+        rk.position.set(sp.x, -1.5 + y, LANE_Z - sp.d); rk.scale.setScalar(1.5 + rnd() * 2);
+        rk.castShadow = true; g.add(rk);
+      }
+    }
+  }
+
+  // Humo sobre las chimeneas (zona industrial)
+  lv.smoke.forEach((sm, i) => {
+    if (!chimneys.length) return;
+    const c = chimneys[i % chimneys.length];
+    sm.cx = c.x; sm.top = c.y; sm.z = c.z;
+    sm.s.position.set(c.x, c.y, c.z);
+  });
+}
+
+/* ============================================================
+   Visuales de la pista (suelo, rampas, plataformas, enemigos...)
+   ============================================================ */
+function buildEnemy(e, zone) {
+  const eg = new THREE.Group();
+  const shell = new THREE.MeshPhysicalMaterial({ color: zone.enemy, metalness: 0.25, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12 });
+  const dark = std(0x23272d, 0.5, 0.6);
+  const chrome = std(0xd7dde3, 0.15, 1);
+  const rubber = std(0x161616, 0.9);
+  const glow = new THREE.MeshStandardMaterial({ color: 0xffea00, emissive: 0xffc400, emissiveIntensity: 1.4 });
+  // Cúpula de carrocería (perfil de revolución)
+  const prof = [[0, 0.0], [0.22, 0.02], [0.36, 0.12], [0.42, 0.26], [0.4, 0.38], [0.3, 0.46], [0.16, 0.5], [0, 0.51]]
+    .map(([r, y]) => new THREE.Vector2(r, y));
+  const dome = new THREE.Mesh(new THREE.LatheGeometry(prof, 28), shell);
+  dome.position.set(0, 0.42, 0); dome.castShadow = true;
+  eg.add(dome);
+  // Chasis inferior
+  sph(eg, dark, 0, 0.34, 0, 0.42, 0.1, 0.34);
+  // Ojo-visor amarillo con ceño
+  sph(eg, glow, 0.3, 0.7, 0.14, 0.1, 0.09, 0.09);
+  sph(eg, std(0x111111, 0.3), 0.36, 0.7, 0.16, 0.035);
+  const brow = addBox(eg, dark, 0.28, 0.8, 0.14, 0.2, 0.04, 0.12); brow.rotation.z = -0.35;
+  // Antenas con punta luminosa (se balancean)
+  e.antennas = [];
+  for (const ax of [-0.12, 0.12]) {
+    const pv = new THREE.Group(); pv.position.set(ax, 0.9, 0.02);
+    cyl(pv, dark, 0, 0.18, 0, 0.02, 0.36);
+    sph(pv, glow, 0, 0.38, 0, 0.04);
+    eg.add(pv); e.antennas.push(pv);
+  }
+  // Ruedas: aro de goma, buje y radios que giran
+  e.wheels = [];
+  for (const [wx, wz] of [[0.14, 0.2], [-0.14, -0.14]]) {
+    const w = new THREE.Group(); w.position.set(wx, 0.27, wz);
+    const tire = new THREE.Mesh(RING_GEO, rubber); tire.scale.setScalar(0.8); tire.castShadow = true;
+    const hub = new THREE.Mesh(UNIT_CYL, chrome); hub.scale.set(0.09, 0.07, 0.09); hub.rotation.x = Math.PI / 2;
+    const spokes = new THREE.Group();
+    for (let k = 0; k < 3; k++) {
+      const sp = addBox(spokes, chrome, 0, 0, 0, 0.44, 0.04, 0.04); sp.rotation.z = k * Math.PI / 3; sp.castShadow = false;
+    }
+    w.add(tire, hub, spokes); w.userData.spokes = spokes;
+    eg.add(w); e.wheels.push(w);
+  }
+  eg.scale.setScalar(1.1);
+  return eg;
+}
+
 function buildVisuals(lv, zone) {
   const g = new THREE.Group();
   const T = zoneTex(lv.zoneIdx);
-  const M = {
-    accent: new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 0.35, roughness: 0.4 }),
-    spring: std(0xd32f2f, 0.45),
-    springTop: std(0xffe53b, 0.35),
-    ring: new THREE.MeshStandardMaterial({ color: 0xffd23f, metalness: 1, roughness: 0.18, emissive: 0x3a2a00 }),
-    post: std(0xb0b8c0, 0.35, 0.8),
-    white: std(0xffffff, 0.3),
-    black: std(0x111111, 0.3),
-    tire: std(0x1c1c1c, 0.8),
-  };
+  const S = lv.solids;
+  const accent = new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 0.35, roughness: 0.4 });
+  const springTop = std(0xffe53b, 0.35);
+  const ringM = new THREE.MeshStandardMaterial({ color: 0xffd23f, metalness: 1, roughness: 0.18, emissive: 0x3a2a00 });
+  const postM = zone.decor === 'green' ? std(0x7a5230, 0.8) : std(0x8a949c, 0.4, 0.7);
+  const padGlow = new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 1.2 });
 
-  // Sólidos (texturas repetidas según el ancho del bloque)
-  for (const s of lv.solids) {
-    const cx = (s.x0 + s.x1) / 2, w = s.x1 - s.x0;
+  lv.smoke = [];
+  if (zone.decor === 'industrial') {
+    const smokeMat = new THREE.SpriteMaterial({ map: T.blob, color: 0xb9c0c6, transparent: true, opacity: 0.55, depthWrite: false });
+    for (let i = 0; i < 12; i++) {
+      const s = new THREE.Sprite(smokeMat.clone());
+      g.add(s);
+      lv.smoke.push({ s, age: i * 0.35, life: 4.2, cx: 0, top: 0, z: -30 });
+    }
+  }
+
+  // Pista
+  for (const s of S) {
     if (s.kind === 'ground') {
-      const dirtM = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, w / 4, 1), roughness: 0.95 });
+      const w = s.x1 - s.x0, top = s.y1, cx = (s.x0 + s.x1) / 2;
+      const dirtM = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, w / 4, (top + 4) / 4), roughness: 0.95 });
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.grass, w / 4, 0.25), roughness: 0.85 });
       const topM = new THREE.MeshStandardMaterial({ map: tiled(T.grass, w / 4, 1), roughness: 0.8 });
-      addBox(g, dirtM, cx, -2, 0, w, 4, 4);
-      addBox(g, [sideM, sideM, topM, dirtM, sideM, sideM], cx, -0.25, 0, w, 0.5, 4.4);
+      addBox(g, dirtM, cx, (top - 4) / 2, 0, w, top + 4, 4);
+      addBox(g, [sideM, sideM, topM, dirtM, sideM, sideM], cx, top - 0.25, 0, w, 0.5, 4.4);
+    } else if (s.kind === 'slope') {
+      const dirtS = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, 0.25, 0.25), roughness: 0.95 });
+      const grassS = new THREE.MeshStandardMaterial({ map: tiled(T.grass, 0.25, 0.25), roughness: 0.8 });
+      prism(g, [[s.x0, -4], [s.x1, -4], [s.x1, s.yb], [s.x0, s.ya]], -2, 4, dirtS);
+      prism(g, [[s.x0, s.ya], [s.x1, s.yb], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2.2, 4.4, grassS);
     } else if (s.kind === 'spring') {
       const red = new THREE.MeshStandardMaterial({ map: T.plank, color: 0xff6b6b, roughness: 0.4 });
-      s.mesh = addBox(g, [red, red, M.springTop, red, red, red], cx, 0.3, 0, w, 0.6, 1.4);
-    } else {
-      const side = new THREE.MeshStandardMaterial({ map: tiled(T.plank, w / 3, 1), roughness: 0.65 });
+      s.mesh = addBox(g, [red, red, springTop, red, red, red], (s.x0 + s.x1) / 2, s.y0 + 0.3, 0, s.x1 - s.x0, 0.6, 1.4);
+    } else {                                          // plataforma
+      const w = s.x1 - s.x0, h = s.y1 - s.y0, cx = (s.x0 + s.x1) / 2;
+      const side = new THREE.MeshStandardMaterial({ map: tiled(T.plank, w / 3, h / 3), roughness: 0.65 });
       const top = new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.55 });
       const mat = [side, side, top, side, side, side];
-      if (s.mover) s.mesh = addBox(g, mat, s.cx, (s.y0 + s.y1) / 2, 0, s.w, s.y1 - s.y0, 2.4);
-      else addBox(g, mat, cx, (s.y0 + s.y1) / 2, 0, w, s.y1 - s.y0, 2.4);
+      if (s.mover) {
+        s.mesh = addBox(g, mat, s.cx, (s.y0 + s.y1) / 2, 0, s.w, h, 2.4);
+        s.glow = addBox(g, padGlow, s.cx, s.y0 - 0.12, 0, s.w * 0.8, 0.06, 2.0);
+      } else {
+        addBox(g, mat, cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
+        // Pilares de apoyo hasta el suelo
+        for (const px of [s.x0 + 0.7, s.x1 - 0.7]) addBox(g, postM, px, (s.y0 - 4) / 2, 0, 0.45, s.y0 + 4, 0.45);
+      }
     }
   }
 
   // Anillos: InstancedMesh (una llamada de dibujo para todos)
-  lv.ringMesh = new THREE.InstancedMesh(RING_GEO, M.ring, Math.max(1, lv.rings.length));
+  lv.ringMesh = new THREE.InstancedMesh(RING_GEO, ringM, Math.max(1, lv.rings.length));
   lv.ringMesh.count = lv.rings.length;
   lv.ringMesh.frustumCulled = false;
   g.add(lv.ringMesh);
-  lv.scatterMesh = new THREE.InstancedMesh(RING_GEO, M.ring, MAX_SCATTER);
+  lv.scatterMesh = new THREE.InstancedMesh(RING_GEO, ringM, MAX_SCATTER);
   lv.scatterMesh.count = 0;
   lv.scatterMesh.frustumCulled = false;
   g.add(lv.scatterMesh);
 
-  // Enemigos: robot con rueda y ojo rojo
+  // Enemigos
   for (const e of lv.enemies) {
-    const eg = new THREE.Group();
-    const shell = std(zone.enemy, 0.3, 0.5);
-    sph(eg, shell, 0, 0.05, 0, 0.42, 0.36, 0.4).castShadow = true;
-    sph(eg, std(0xffe08a, 0.4, 0.4), 0, 0.26, 0.0, 0.26, 0.12, 0.26);
-    sph(eg, M.white, 0.2, 0.14, 0.3, 0.13);
-    sph(eg, std(0xd00000, 0.3), 0.25, 0.14, 0.4, 0.07);
-    const wheel = new THREE.Mesh(RING_GEO, M.tire);
-    wheel.position.set(0, -0.3, 0.18); wheel.scale.setScalar(0.62);
-    eg.add(wheel);
-    sph(eg, std(0xbfc6cc, 0.3, 0.8), 0, -0.3, 0.18, 0.08);
-    eg.position.set(e.x, ENEMY_R, 0);
-    g.add(eg);
-    e.mesh = eg; e.wheel = wheel;
+    e.mesh = buildEnemy(e, zone);
+    e.mesh.position.set(e.x, e.y, 0);
+    g.add(e.mesh);
   }
 
   // Postes de control y meta
   for (const c of lv.checkpoints) {
-    addBox(g, M.post, c.x, 1.1, 0, 0.12, 2.2, 0.12);
+    addBox(g, postM, c.x, c.y + 1.1, 0, 0.12, 2.2, 0.12);
     c.mat = std(0x9aa3ab, 0.35, 0.7);
-    c.orb = sph(g, c.mat, c.x, 2.35, 0, 0.22);
+    c.orb = sph(g, c.mat, c.x, c.y + 2.35, 0, 0.22);
   }
-  addBox(g, M.post, lv.goalX, 3.5, 0, 0.3, 7, 0.3);
-  lv.goalOrb = sph(g, M.accent, lv.goalX, 7.2, 0, 0.5);
+  addBox(g, postM, lv.goalX, lv.goalY + 3.5, 0, 0.3, 7, 0.3);
+  lv.goalOrb = sph(g, accent, lv.goalX, lv.goalY + 7.2, 0, 0.5);
 
-  // Humo de las chimeneas (zona industrial): pool de sprites
-  lv.smoke = [];
-  if (lv.zoneIdx === 1) {
-    const smokeMat = new THREE.SpriteMaterial({ map: T.blob, color: 0xb9c0c6, transparent: true, opacity: 0.55, depthWrite: false });
-    for (let i = 0; i < 14; i++) {
-      const s = new THREE.Sprite(smokeMat.clone());
-      g.add(s);
-      lv.smoke.push({ s, age: i * 0.3, life: 4.2, cx: 0, top: 0 });
-    }
-  }
+  buildBackdrop(lv, zone, T, g);
 
-  addDecor(g, lv, zone, T);
-
-  // Agua (zona acuática): shader con olas, espuma y brillos
+  // Agua (zona acuática): superficie con olas, espuma y brillos
   if (zone.water) {
-    const wg = new THREE.PlaneGeometry(lv.length + 200, 20, 160, 3).rotateX(-Math.PI / 2);
+    const wd = 110, wx0 = -60, wx1 = lv.endX + 90;
+    const wg = new THREE.PlaneGeometry(wx1 - wx0, wd, Math.ceil((wx1 - wx0) / 1.5), 40).rotateX(-Math.PI / 2);
     lv.water = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false,
       uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Color(0x3fd0ff) }, uB: { value: new THREE.Color(0x0a5a9a) } },
@@ -675,94 +914,10 @@ function buildVisuals(lv, zone) {
         }`,
     });
     const water = new THREE.Mesh(wg, lv.water);
-    water.position.set(lv.length / 2 - 20, -2.2, -9);
+    water.position.set((wx0 + wx1) / 2, -2.2, 1 - wd / 2);
     g.add(water);
   }
-
   return g;
-}
-
-function addDecor(g, lv, zone, T) {
-  const rnd = mulberry32(lv.n * 31 + 7);
-  const end = lv.length + 60;
-  const tex = (t, rx, ry) => tiled(t, rx, ry);
-  const cloudMat = () => new THREE.SpriteMaterial({ map: T.blob, color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
-
-  // Nubes (zonas verde y acuática)
-  if (zone.decor !== 'industrial') {
-    for (let i = 0; i < 9; i++) {
-      const c = new THREE.Sprite(cloudMat());
-      c.position.set(rnd() * end - 20, 13 + rnd() * 6, -45 - rnd() * 20);
-      c.scale.set(16 + rnd() * 12, 6 + rnd() * 3, 1);
-      g.add(c);
-    }
-  }
-
-  if (zone.decor === 'green') {
-    const hillM = (r) => new THREE.MeshStandardMaterial({ map: tex(T.hill, 3, 2), roughness: 0.9 });
-    for (let x = -20; x < end; x += 16) {
-      const R = 8 + rnd() * 8;
-      const h = sph(g, hillM(R), x + rnd() * 6, -3, -34 - rnd() * 8, R, R * 0.6, R);
-      h.receiveShadow = false;
-    }
-    const barkM = new THREE.MeshStandardMaterial({ map: tex(T.bark, 1, 3), roughness: 0.9 });
-    const leafM = new THREE.MeshStandardMaterial({ map: tex(T.leaf, 1, 1), roughness: 0.85 });
-    for (let x = -10; x < end; x += 13) {
-      const trunk = cyl(g, barkM, x, 1.7, -9, 0.22, 3.4);
-      trunk.castShadow = false;
-      sph(g, leafM, x - 0.3, 3.9, -9, 1.5);
-      sph(g, leafM, x + 0.9, 4.3, -9.4, 1.1);
-    }
-    // Girasoles y flores delante de los árboles
-    const petal = std(0xffc81a, 0.6), seed = std(0x5b3a1a, 0.9), stem = std(0x3f9c3a, 0.8);
-    for (let x = 0; x < end; x += 9) {
-      const h = 0.8 + rnd() * 0.8;
-      cyl(g, stem, x, h / 2, -4.5, 0.03, h);
-      sph(g, petal, x, h, -4.5, 0.14, 0.14, 0.05);
-      sph(g, seed, x, h, -4.45, 0.07, 0.07, 0.04);
-    }
-  } else if (zone.decor === 'industrial') {
-    const steel = new THREE.MeshStandardMaterial({ map: tex(T.grass, 1, 1), roughness: 0.55, metalness: 0.4 });
-    for (let x = -10; x < end; x += 22) {
-      const w = 7 + rnd() * 5, h = 10 + rnd() * 14;
-      const win = new THREE.MeshStandardMaterial({ map: tex(T.leaf, w / 4, h / 4), roughness: 0.6, emissive: 0x221100, emissiveIntensity: 0.3 });
-      const side = new THREE.MeshStandardMaterial({ color: 0x3b4650, roughness: 0.7 });
-      addBox(g, [side, side, side, side, win, side], x, h / 2, -30 - rnd() * 6, w, h, 6);
-      // Chimenea con su humo
-      const cx = x + w * 0.25;
-      const top = 12 + rnd() * 10;
-      cyl(g, steel, cx, top / 2, -31, 0.9, top);
-      if (lv.smoke.length) {
-        const sm = lv.smoke[Math.floor(rnd() * lv.smoke.length)];
-        sm.cx = cx; sm.top = top + 0.5;
-      }
-    }
-    // Cadenas de tuberías con bridas
-    const pipeM = new THREE.MeshStandardMaterial({ color: 0x7d8b96, roughness: 0.35, metalness: 0.8 });
-    for (let x = -10; x < end; x += 40) {
-      cyl(g, pipeM, x + 20, 4, -11, 0.4, 40, true);
-      for (let k = 0; k < 4; k++) cyl(g, pipeM, x + 4 + k * 10, 4, -11, 0.55, 0.25, true);
-    }
-  } else {
-    const rockM = new THREE.MeshStandardMaterial({ map: tex(T.plank, 1, 1), roughness: 0.9 });
-    const sandM = new THREE.MeshStandardMaterial({ map: tex(T.dirt, 1, 4), roughness: 0.95 });
-    const greenM = new THREE.MeshStandardMaterial({ map: tex(T.leaf, 2, 2), roughness: 0.85 });
-    for (let x = -10; x < end; x += 18) {
-      const r = new THREE.Mesh(UNIT_ROCK, rockM);
-      r.position.set(x, -1, -24);
-      r.scale.setScalar(2 + rnd() * 2);
-      g.add(r);
-    }
-    for (let x = -6; x < end; x += 15) {
-      const h = 4 + rnd() * 5;
-      cyl(g, sandM, x, -2 + h / 2, -12, 0.8, h);
-    }
-    // Islas lejanas con vegetación
-    for (let x = 0; x < end; x += 45) {
-      cyl(g, rockM, x + rnd() * 10, -2.6, -55, 9 + rnd() * 5, 2.4);
-      sph(g, greenM, x + rnd() * 10, -0.2, -55, 6, 2.5, 5);
-    }
-  }
 }
 
 /* ============================================================
@@ -770,14 +925,14 @@ function addDecor(g, lv, zone, T) {
    ============================================================ */
 const player = {
   x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1,
-  grounded: false, groundSolid: null, jumping: false,
+  grounded: false, groundSolid: null, jumping: false, spinAir: false,
   crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
 };
-const P = { runT: 0 };
+const P = { runT: 0, air: 0 };
 function buildPlayer() {
   const root = new THREE.Group();
   const lean = new THREE.Group();   // inclinación al correr / saltar
-  const spin = new THREE.Group();   // giro al rodar
+  const spin = new THREE.Group();   // giro al rodar o en el salto
   root.add(lean); lean.add(spin);
   P.root = root; P.lean = lean; P.spin = spin;
 
@@ -798,27 +953,21 @@ function buildPlayer() {
   P.head = sph(spin, blue, hx, hy, 0, 0.4, 0.37, 0.38);
 
   // Púas de la espalda (en abanico) y la parte baja
-  const back = [
-    { a: 0.55, L: 0.78 }, { a: 0.95, L: 0.9 }, { a: 1.35, L: 0.84 }, { a: 1.75, L: 0.66 },
-  ];
   P.backSpikes = new THREE.Group(); spin.add(P.backSpikes);
-  for (const s of back) {
+  for (const s of [{ a: 0.55, L: 0.78 }, { a: 0.95, L: 0.9 }, { a: 1.35, L: 0.84 }, { a: 1.75, L: 0.66 }]) {
     const d = s.L / 2 + 0.22;
-    spike(P.backSpikes, blue, 0.11, 0.11, 0.15, s.L, s.a);
-    P.backSpikes.children[P.backSpikes.children.length - 1].position.set(hx - Math.sin(s.a) * d, hy + Math.cos(s.a) * d, 0);
+    spike(P.backSpikes, blue, 0, 0, 0.15, s.L, s.a).position.set(hx - Math.sin(s.a) * d, hy + Math.cos(s.a) * d, 0);
   }
   for (const s of [{ a: 2.25, L: 0.5 }, { a: 2.6, L: 0.4 }]) {
     const d = s.L / 2 + 0.3;
-    const m = spike(P.backSpikes, blueD, 0, 0, 0.12, s.L, s.a);
-    m.position.set(-Math.sin(s.a) * d, Math.cos(s.a) * d - 0.05, 0);
+    spike(P.backSpikes, blueD, 0, 0, 0.12, s.L, s.a).position.set(-Math.sin(s.a) * d, Math.cos(s.a) * d - 0.05, 0);
   }
 
-  // Púas de bola (modo rodar): anillo radial alrededor del cuerpo
+  // Púas de bola (al rodar o en el salto): anillo radial alrededor del cuerpo
   P.ballSpikes = new THREE.Group(); spin.add(P.ballSpikes); P.ballSpikes.visible = false;
   for (let k = 0; k < 8; k++) {
     const th = (k / 8) * Math.PI * 2;
-    spike(P.ballSpikes, blue, Math.cos(th) * 0.58, Math.sin(th) * 0.58, 0.12, 0.42, th - Math.PI / 2);
-    P.ballSpikes.children[k].position.set(Math.cos(th) * 0.6, Math.sin(th) * 0.6, 0);
+    spike(P.ballSpikes, blue, Math.cos(th) * 0.6, Math.sin(th) * 0.6, 0.12, 0.42, th - Math.PI / 2);
   }
 
   // Cara: hocico, ojos grandes y verdes
@@ -837,7 +986,7 @@ function buildPlayer() {
   for (const z of [0.3, -0.3]) {
     const pivot = new THREE.Group(); pivot.position.set(0.05, -0.08, z);
     const arm = new THREE.Mesh(LIMB_GEO, blue); arm.position.set(0, -0.17, 0); arm.castShadow = true;
-    const hand = sph(pivot, glove, 0, -0.42, 0, 0.11);
+    sph(pivot, glove, 0, -0.42, 0, 0.11);
     pivot.add(arm);
     P.face.add(pivot);
     P.arms.push(pivot);
@@ -855,7 +1004,6 @@ function buildPlayer() {
     P.feet.push(pivot);
   }
 
-  // Todas las partes con sombra
   root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   scene.add(root);
 }
@@ -880,21 +1028,33 @@ function animatePlayer(t, dt) {
   if (running) lean = -0.1 * sp;
   else if (!p.grounded) lean = p.vy > 0 ? -0.18 : 0.12;
   P.lean.rotation.z += (lean - P.lean.rotation.z) * (1 - Math.exp(-dt * 12));
-  const squash = p.crouch ? 0.74 : 1;
-  P.lean.scale.set(1, squash, 1);
+  P.lean.scale.set(1, p.crouch ? 0.74 : 1, 1);
   P.lean.position.y = p.crouch ? -0.12 : 0;
 }
 
 /* ============================================================
-   Física: sólidos AABB, eje X y eje Y por separado
+   Física: sólidos AABB, rampas y eje X / Y por separado
    ============================================================ */
-function resolveX(p, solids) {
+const slopeMax = (s, p) => Math.max(slopeAt(s, p.x - PW / 2), slopeAt(s, p.x + PW / 2));
+
+function resolveX(p, solids, prevX) {
   const top = p.y + PH / 2, bottom = p.y - PH / 2;
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
     if (s.kind === 'platform') continue;                // una cara: no bloquea lateralmente
     if (top <= s.y0 + EPS || bottom >= s.y1 - EPS) continue;
     if (right <= s.x0 || left >= s.x1) continue;
+    if (s.kind === 'slope') {
+      // Una pared demasiado empinada detiene al jugador
+      if (bottom < slopeMax(s, p) - 0.3) { p.x = prevX; p.vx = 0; p.dashT = 0; p.charge = 0; }
+      continue;
+    }
+    if (s.kind === 'spring') {
+      // Un muelle de lado te lanza hacia arriba en vez de bloquearte
+      p.x = prevX; p.vx = 0; p.vy = SPRING_V; p.grounded = false; p.groundSolid = null; p.jumping = false;
+      s.squash = 0.15;
+      continue;
+    }
     const pushLeft = right - s.x0, pushRight = s.x1 - left;
     p.x = pushLeft < pushRight ? s.x0 - PW / 2 : s.x1 + PW / 2;
     p.vx = 0; p.dashT = 0; p.charge = 0;
@@ -907,9 +1067,13 @@ function resolveY(p, solids, prevBottom) {
   for (const s of solids) {
     if (right <= s.x0 || left >= s.x1) continue;
     const bottom = p.y - PH / 2;
+    const slope = s.kind === 'slope';
+    const surf = slope ? slopeMax(s, p) : s.y1;
+    const tol = slope ? 0.3 : 0.02;   // en rampas se "pega" al bajar
+    const reach = slope ? 0.3 : 0;
     // Aterriza sólo si los pies estaban por encima de la superficie en el paso anterior
-    if (p.vy <= 0 && prevBottom >= s.y1 - 0.02 && bottom < s.y1) {
-      p.y = s.y1 + PH / 2;
+    if (p.vy <= 0 && prevBottom >= surf - tol && bottom < surf + reach) {
+      p.y = surf + PH / 2;
       p.vy = 0; p.grounded = true; p.groundSolid = s;
       if (s.kind === 'spring') {
         p.vy = s.power; p.grounded = false; p.groundSolid = null; p.jumping = false;
@@ -929,7 +1093,7 @@ function stepPlayer(dt) {
   // Salto (altura variable: soltar pronto corta el salto)
   if (input.jumpPressed) {
     input.jumpPressed = false;
-    if (p.grounded) { p.vy = JUMP_V; p.grounded = false; p.groundSolid = null; p.jumping = true; p.crouch = false; }
+    if (p.grounded) { p.vy = JUMP_V; p.grounded = false; p.groundSolid = null; p.jumping = true; p.spinAir = true; p.crouch = false; }
   }
   if (p.jumping && p.vy > 0 && !isJumpHeld()) { p.vy *= 0.5; p.jumping = false; }
 
@@ -970,11 +1134,13 @@ function stepPlayer(dt) {
   if (p.grounded) p.vy = -GRAVITY * dt;
   else p.vy = Math.max(p.vy - GRAVITY * dt, -MAX_FALL);
 
+  const prevX = p.x;
   p.x += p.vx * dt;
-  resolveX(p, lv.solids);
+  resolveX(p, lv.solids, prevX);
   const prevBottom = p.y - PH / 2;
   p.y += p.vy * dt;
   resolveY(p, lv.solids, prevBottom);
+  if (p.grounded) p.spinAir = false;
 }
 
 /* ============================================================
@@ -1016,7 +1182,7 @@ function die() {
   const p = player;
   p.x = checkpoint.x; p.y = checkpoint.y + 1;
   p.vx = 0; p.vy = 0; p.rings = 0; p.invT = 1.5;
-  p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0;
+  p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0; p.spinAir = false;
 }
 
 function stepWorld(dt) {
@@ -1040,11 +1206,12 @@ function stepWorld(dt) {
     e.x += e.dir * 2.2 * dt;
     if (e.x < e.minX) { e.x = e.minX; e.dir = 1; }
     if (e.x > e.maxX) { e.x = e.maxX; e.dir = -1; }
-    const dx = e.x - p.x, dy = ENEMY_R - p.y;
+    const ey = e.y + ENEMY_R;
+    const dx = e.x - p.x, dy = ey - p.y;
     if (dx * dx + dy * dy < (ENEMY_R + 0.4) ** 2) {
       if (p.rolling || p.dashT > 0) {              // rodando: destruye
         e.alive = false; score += 100;
-      } else if (p.vy < 0 && p.y - PH / 2 > ENEMY_R) { // pisotón
+      } else if (p.vy < 0 && p.y - PH / 2 > ey) {  // pisotón
         e.alive = false; score += 100;
         p.vy = 10; p.grounded = false; p.groundSolid = null;
       } else {
@@ -1076,7 +1243,7 @@ function stepWorld(dt) {
   for (const c of lv.checkpoints) {
     if (!c.hit && p.x > c.x) {
       c.hit = true;
-      checkpoint = { x: c.x, y: 1.2 };
+      checkpoint = { x: c.x, y: c.y + 1.2 };
       c.mat.color.setHex(zone.accent); c.mat.emissive.setHex(zone.accent);
     }
   }
@@ -1111,36 +1278,41 @@ function updateVisuals(t, dt) {
   const lv = currentLevel, p = player;
   if (!lv) return;
 
-  // Jugador
-  // Escala visual 1.3 (el personaje es más legible); los pies quedan sobre la caja de colisión
+  // Jugador. Escala visual 1.3; los pies quedan sobre la caja de colisión
   const VS = 1.3;
   P.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, 0);
   P.root.scale.set(p.facing * VS, VS, VS);
-  P.spin.rotation.z = p.rolling ? -p.roll : 0;
-  P.face.visible = !p.rolling;
-  P.head.visible = !p.rolling;
-  P.arms.forEach((a) => (a.visible = !p.rolling));
-  P.feet.forEach((f) => (f.visible = !p.rolling));
-  P.backSpikes.visible = !p.rolling;
-  P.ballSpikes.visible = p.rolling;
   P.root.visible = !(p.invT > 0 && Math.floor(t * 16) % 2 === 0);
+  // Modo bola: al rodar o durante un salto con giro
+  const ball = p.rolling || p.spinAir;
+  P.face.visible = !ball; P.head.visible = !ball;
+  P.arms.forEach((a) => (a.visible = !ball));
+  P.feet.forEach((f) => (f.visible = !ball));
+  P.backSpikes.visible = !ball;
+  P.ballSpikes.visible = ball;
+  if (p.rolling) { P.air = 0; P.spin.rotation.z = -p.roll; }
+  else if (p.spinAir) { P.air -= dt * 18; P.spin.rotation.z = P.air; }
+  else { P.air = 0; P.spin.rotation.z = 0; }
   animatePlayer(t, dt);
 
-  // Plataformas, muelles, enemigos
+  // Plataformas móviles y muelles
   for (const s of lv.solids) {
-    if (s.mover) s.mesh.position.x = s.cx;
+    if (s.mover) { s.mesh.position.x = s.cx; s.glow.position.x = s.cx; }
     if (s.kind === 'spring' && s.mesh) {
       s.squash = Math.max(0, s.squash - dt);
       const k = s.squash > 0 ? 0.6 : 1;
       s.mesh.scale.y = 0.6 * k;
-      s.mesh.position.y = 0.3 * k;
+      s.mesh.position.y = s.y0 + 0.3 * k;
     }
   }
+
+  // Enemigos: rueda girando, antenas balanceándose, mira hacia donde camina
   for (const e of lv.enemies) {
     e.mesh.visible = e.alive;
     e.mesh.position.x = e.x;
-    e.mesh.position.y = ENEMY_R + Math.abs(Math.sin(t * 6 + e.phase)) * 0.06;
-    e.wheel.rotation.z = -e.x * 4;
+    e.mesh.scale.x = 1.1 * e.dir;
+    e.wheels.forEach((w) => (w.userData.spokes.rotation.z = -e.x * 4));
+    e.antennas.forEach((a, i) => (a.rotation.z = Math.sin(t * 6 + e.phase + i) * 0.22));
   }
 
   // Anillos (giran; los recogidos se ocultan)
@@ -1166,10 +1338,10 @@ function updateVisuals(t, dt) {
   // Humo: sube, crece y se desvanece
   for (const sm of lv.smoke) {
     sm.age += dt;
-    if (sm.age > sm.life) { sm.age = 0; sm.s.position.set(sm.cx, sm.top, -31); }
+    if (sm.age > sm.life) { sm.age = 0; sm.s.position.set(sm.cx, sm.top, sm.z); }
     const k = sm.age / sm.life;
     sm.s.position.y += dt * 1.1;
-    sm.s.position.x += dt * 0.25;
+    sm.s.position.x += dt * (0.3 + 0.2 * Math.sin(t + sm.cx));
     sm.s.scale.setScalar(1.5 + k * 4);
     sm.s.material.opacity = 0.5 * (1 - k);
   }
@@ -1203,7 +1375,7 @@ function loadLevel(n) {
 
   Object.assign(player, {
     x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1, grounded: false, groundSolid: null,
-    jumping: false, crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
+    jumping: false, spinAir: false, crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
   });
   checkpoint = { x: 0, y: 2 };
   cam.x = player.x; cam.y = player.y;

@@ -21,14 +21,17 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 ## Contenido
 
 - 3 zonas (Verde, Industrial, Acuática) × 3 actos = 9 niveles generados proceduralmente con semilla fija.
+- Tramos planos largos para correr, rampas que suben y bajan, huecos con puente opcional y plataformas con pilares.
 - Anillos (instancing), muelles, plataformas de una cara, plataformas móviles, enemigos que se pisan o se destruyen rodando, postes de control y meta.
 - Texturas procedurales (sin imágenes externas) para hierba, tierra, madera, acero, arena y roca.
 - Iluminación con sombras, reflejos de entorno y tone mapping; cielo y agua con shaders propios.
-- Decoración con parallax de profundidad (eje Z): colinas, árboles y girasoles, fábricas con humo, islas y rocas.
+- Terreno de fondo continuo con la pista: colinas, bosque, fábricas con humo y mar con islas, todo apoyado en el suelo.
+- Enemigos robot con cúpula, antenas y ruedas que giran.
+- El erizo gira en el salto y rueda al correr con SPIN.
 
 ## Limitaciones actuales
 
-- Sin bucles, rampas ni raíles todavía.
+- Sin bucles ni raíles todavía.
 - Sin sonido.
 - Los escenarios son geometría procedural de Three.js; no se usan modelos de Blender.
 
