@@ -14,6 +14,7 @@ const DASH_MIN = 14, DASH_RANGE = 14;
 const BOOST_V = 28;               // velocidad mínima sobre una franja de aceleración
 const ENEMY_R = 0.45, RING_R = 0.8, MAX_SCATTER = 60;
 const WALL_LIFT = 1.2;            // escalón que se sube al entrar de lado en una rampa
+const MAX_SHOTS = 30;             // proyectiles de enemigos a la vez
 
 // Estado del jugador (se reinicia en cada fase)
 export const player = {
@@ -32,10 +33,49 @@ export const G = {
 
 const slopeMax = (s, p) => Math.max(slopeAt(s, p.x - PW / 2), slopeAt(s, p.x + PW / 2));
 
-// Enemigo destruido: puntos y chispas en su posición
-function killEnemy(e, y) {
-  e.alive = false; G.score += 100;
+// Golpe a un enemigo: los de la pista caen de una vez; el jefe aguanta tres golpes y luego estalla
+function hitEnemy(e, y) {
+  if (e.type === 'boss') {
+    e.hp--; e.inv = 1;
+    G.fx.push({ x: e.x, y });
+    if (e.hp > 0) return;
+    for (let i = 0; i < 5; i++) G.fx.push({ x: e.x + (i - 2) * 0.9, y: y + (i % 2) * 0.8 });
+    G.score += 1000;
+  } else {
+    G.score += 100;
+  }
+  e.alive = false;
   G.fx.push({ x: e.x, y });
+}
+
+// Proyectil hacia el jugador desde (sx, sy), con un desvío de a radianes
+function aim(lv, sx, sy, speed, a) {
+  if (lv.shots.length >= MAX_SHOTS) return;
+  const p = player;
+  const t = Math.atan2(p.y + 0.5 - sy, p.x + p.vx * 0.3 - sx) + a;
+  lv.shots.push({ x: sx, y: sy, vx: Math.cos(t) * speed, vy: Math.sin(t) * speed, life: 4 });
+}
+
+// Movimiento de cada enemigo: patrulla; el dron ondula en el aire; la torreta y el jefe disparan al jugador
+function moveEnemy(e, lv, dt) {
+  const p = player;
+  e.inv = Math.max(0, (e.inv || 0) - dt);
+  if (e.type === 'fly') e.y = e.base + Math.sin(lv.t * 2.2 + e.phase) * 0.7;
+  e.x += e.dir * (e.speed ?? 2.2) * dt;
+  if (e.x < e.minX) { e.x = e.minX; e.dir = 1; }
+  if (e.x > e.maxX) { e.x = e.maxX; e.dir = -1; }
+  if (e.type !== 'shoot' && e.type !== 'boss') return;
+  e.cd -= dt;
+  e.face = p.x > e.x ? 1 : -1;                     // se gira hacia el jugador (no cambia la patrulla)
+  const range = e.type === 'boss' ? 30 : 16;
+  if (e.cd > 0 || Math.abs(p.x - e.x) > range || Math.abs(p.y - e.y) > 9) return;
+  if (e.type === 'shoot') {
+    aim(lv, e.x + e.face * 0.9, e.y + 1.0, 8, 0);
+    e.cd = 2.2;
+  } else {
+    for (const a of [-0.22, 0, 0.22]) aim(lv, e.x + e.face * 1.8, e.y + 1.9, 9, a);
+    e.cd = 2.6;
+  }
 }
 
 function resolveX(p, solids, prevX) {
@@ -251,21 +291,30 @@ export function stepWorld(dt) {
   // Enemigos: destruidos al rodar, pisoteados o te hieren
   for (const e of lv.enemies) {
     if (!e.alive) continue;
-    e.x += e.dir * 2.2 * dt;
-    if (e.x < e.minX) { e.x = e.minX; e.dir = 1; }
-    if (e.x > e.maxX) { e.x = e.maxX; e.dir = -1; }
-    const ey = e.y + ENEMY_R;
+    moveEnemy(e, lv, dt);
+    const r = e.r || ENEMY_R, ey = e.y + r;
     const dx = e.x - p.x, dy = ey - p.y;
-    if (dx * dx + dy * dy < (ENEMY_R + 0.4) ** 2) {
-      if (p.rolling || p.dashT > 0) {               // rodando: destruye
-        killEnemy(e, ey);
-      } else if (p.vy < 0 && p.y - PH / 2 > ey) {   // pisotón
-        killEnemy(e, ey);
+    if (dx * dx + dy * dy < (r + 0.4) ** 2) {
+      if (p.vy < 0 && p.y - PH / 2 > ey) {          // pisotón: rebota (un jefe solo recibe un golpe por vez)
+        if (!(e.inv > 0)) hitEnemy(e, ey);
         p.vy = 10; p.grounded = false; p.groundSolid = null;
+      } else if ((p.rolling || p.dashT > 0) && !(e.inv > 0)) {   // rodando: destruye
+        hitEnemy(e, ey);
       } else {
         hurt();
         if (G.mode !== 'play') return;
       }
+    }
+  }
+  // Disparos: vuelan en línea recta y hieren al jugador al tocarlos
+  for (let i = lv.shots.length - 1; i >= 0; i--) {
+    const s = lv.shots[i];
+    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    if (s.life <= 0) { lv.shots.splice(i, 1); continue; }
+    if (Math.abs(s.x - p.x) < 0.5 && Math.abs(s.y - p.y) < 0.75) {
+      lv.shots.splice(i, 1);
+      hurt();
+      if (G.mode !== 'play') return;
     }
   }
 

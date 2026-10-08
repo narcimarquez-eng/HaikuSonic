@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RING_GEO, UNIT_BOX, UNIT_CYL, UNIT_SPHERE, addBox, mesh } from './geo.js';
 import { ACCENT, ENEMY_COL } from './backdrop.js';
+import { MODELS } from './models.js';
 
 const MAX_SCATTER = 60;
 const ENEMY_SCALE = 1.1;
@@ -83,6 +84,31 @@ function enemySet(geos, mats, N, root) {
 }
 
 // Crea anillos, enemigos, postes y meta. Anillos y enemigos son instancias compartidas (pocas llamadas de dibujo)
+const MODEL_OF = { fly: 'flyer', shoot: 'shooter', boss: 'boss' };   // tipo de enemigo -> modelo de Blender
+const SHOT_MAX = 40;                                                   // proyectiles de enemigos visibles a la vez
+const _id = new THREE.Matrix4();
+
+// Piezas de un modelo como mallas instanciadas (una por pieza y tipo): si el modelo no cargó, una esfera de respaldo
+function modelParts(name, type, zi, n, root) {
+  const src = MODELS[name];
+  let pieces = [];
+  if (src) {
+    src.updateMatrixWorld(true);
+    src.traverse((o) => { if (o.isMesh) pieces.push({ geo: o.geometry, mat: o.material, m: o.matrixWorld.clone() }); });
+  } else {
+    const s = type === 'boss' ? 1.4 : 0.45;
+    pieces = [{ geo: UNIT_SPHERE, mat: new THREE.MeshStandardMaterial({ color: ENEMY_COL[zi] }), m: new THREE.Matrix4().makeScale(s, s, s) }];
+  }
+  return pieces.map((p) => {
+    const mat = p.mat.clone();
+    if (type !== 'boss' && p.mat.name === 'steel') mat.color.setHex(ENEMY_COL[zi]);   // la carcasa toma el color de la zona
+    const im = new THREE.InstancedMesh(p.geo, mat, n);
+    im.count = n; im.castShadow = true; im.frustumCulled = false;
+    root.add(im);
+    return { im, m: p.m };
+  });
+}
+
 export function buildEntities(lv, zi, chunkOf, root) {
   const E = { accent: ACCENT[zi] };
   const ringMat = new THREE.MeshStandardMaterial({ color: 0xffd23f, metalness: 1, roughness: 0.18, emissive: 0x3a2a00 });
@@ -101,6 +127,17 @@ export function buildEntities(lv, zi, chunkOf, root) {
   const body = bodyGeo(ENEMY_COL[zi]), eye = eyeGeo(), wheel = wheelGeo(), ant = antennaGeo();
   E.R = enemySet([body, eye, wheel, ant], [shell, eyeMat, wheelMat, antMat], N, root);
   E.L = enemySet([mirrorX(body), mirrorX(eye), mirrorX(wheel), mirrorX(ant)], [shell, eyeMat, wheelMat, antMat], N, root);
+
+  // Drones, torretas y jefes: cada pieza de su modelo de Blender es una malla instanciada por tipo
+  E.models = [];
+  for (const [type, name] of Object.entries(MODEL_OF)) {
+    const list = lv.enemies.filter((e) => e.type === type);
+    if (list.length) E.models.push({ list, parts: modelParts(name, type, zi, list.length, root) });
+  }
+  // Disparos de enemigos: esferas naranjas que brillan
+  E.shotIM = new THREE.InstancedMesh(UNIT_SPHERE, new THREE.MeshBasicMaterial({ color: 0xff7a2a, toneMapped: false }), SHOT_MAX);
+  E.shotIM.count = 0; E.shotIM.frustumCulled = false;
+  root.add(E.shotIM);
 
   // Postes de control y meta (cada uno en el tramo donde está)
   const postM = std(0x7a5230, 0.8);
@@ -162,6 +199,23 @@ export function updateEntities(E, lv, t, dt) {
     set.wheel.count = set.ant.count = 2 * n;
     for (const im of [set.body, set.eye, set.wheel, set.ant]) im.instanceMatrix.needsUpdate = true;
   }
+
+  // Drones, torretas y jefes: cada enemigo mueve todas las piezas de su modelo; el jefe late al recibir un golpe
+  for (const set of E.models) {
+    set.list.forEach((e, k) => {
+      const face = e.type === 'fly' ? e.dir : (e.face ?? 1);
+      const pulse = e.inv > 0 ? 1 + 0.08 * Math.sin(t * 60) : 1;
+      _pos.set(e.x, e.y, 0); _q.setFromEuler(_eul.set(0, face < 0 ? Math.PI : 0, 0));
+      _sc.setScalar((e.alive ? 1 : 0) * pulse);
+      _b.compose(_pos, _q, _sc);
+      for (const pt of set.parts) pt.im.setMatrixAt(k, m.multiplyMatrices(_b, pt.m));
+    });
+    for (const pt of set.parts) { pt.im.count = set.list.length; pt.im.instanceMatrix.needsUpdate = true; }
+  }
+  // Disparos de enemigos
+  E.shotIM.count = lv.shots.length;
+  lv.shots.forEach((s, i) => { _pos.set(s.x, s.y, 0.2); _sc.setScalar(0.3); E.shotIM.setMatrixAt(i, m.compose(_pos, _q.identity(), _sc)); });
+  E.shotIM.instanceMatrix.needsUpdate = true;
 
   // Postes: se encienden al pasarlos
   for (const c of lv.checkpoints) {

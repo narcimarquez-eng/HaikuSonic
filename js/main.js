@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { loadFileTextures } from './textures.js';
+import { loadModels } from './models.js';
 import { buildLevel, ZONE_NAMES } from './level.js';
 import { buildWorld, updateWorld, disposeWorld } from './world.js';
 import { buildPlayer, updatePlayer } from './player.js';
@@ -240,7 +241,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 initInput();
 const playBtn = $('btnPlay');
 playBtn.disabled = true; playBtn.textContent = 'CARGANDO…';
-loadFileTextures().then(() => {
+Promise.all([loadFileTextures(), loadModels()]).then(() => {
   loadLevel(0);
   playBtn.disabled = false; playBtn.textContent = 'JUGAR';
   requestAnimationFrame((t) => { last = t; frame(t); });

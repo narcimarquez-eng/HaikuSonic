@@ -28,6 +28,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Zonas de peligro: **pinchos** (en verde e industrial, a veces con una galería bajo ellos que sirve de atajo sin peligro) y **agua** (huecos que matan al caer). Un muelle, pisado corriendo, lanza al jugador por encima de la franja hasta una meseta: terreno sólido que sube de golpe 6.5 sobre la pista y baja después por una rampa.
 - Mesetas con muelle: un muelle en la pista lanza a una meseta de 4 de altura, y una escalada lleva desde esa meseta a otra de 8. Son terreno sólido que sube de golpe, no plataformas colgantes.
 - Anillos (instancing), muelles, plataformas de una cara, plataformas móviles con engranajes, enemigos que se pisan o se destruyen rodando (con chispas), postes de control y meta.
+- Enemigos nuevos (modelos de Blender): **drones voladores** que ondulan sobre la pista (se pisan desde un salto o un picado), **torretas** que disparan al jugador que se acerca (los proyectiles hieren al tocarlos) y un **jefe final** al final del tercer acto de cada zona: aguanta tres golpes (rodar contra él o pisarlo), con invulnerabilidad breve tras cada golpe.
 - Terreno de fondo continuo con la pista, por tramos, con colinas (verde), fábricas (industrial) o mar con islas (acuática).
 - Cordilleras de crestas con roca, estratos y nieve, con niebla atmosférica.
 - Decoración por acto: árboles redondos, pinos, matorrales con flores, tótems, setas y arcos (verde); edificios, grúas, tanques, tuberías y contenedores (industrial); palmeras, muelles, islas de arena y arcos (acuática).
@@ -40,7 +41,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Los tubos son planos (en el eje X-Y): no hay tubos que se crucen en profundidad.
 - La zona acuática no tiene bajadas: el agua llega hasta -3.4 (línea de muerte), así que no cabe una galería bajo la pista.
 - Sin raíles con cadenas colgantes ni sonido.
-- Los escenarios son geometría procedural de Three.js; no se usan modelos de Blender.
+- Los escenarios son geometría procedural de Three.js; solo los drones, las torretas y el jefe son modelos de Blender (`assets/models/*.glb`).
 - Pendiente de probar en un móvil real: rendimiento y tamaño de la pantalla. Las pruebas automáticas se han hecho en Chromium headless con renderizado por software.
 
 ## Texturas
@@ -58,6 +59,8 @@ Las texturas de hierba, madera, ladrillo, suelo y agua son imágenes de muestra 
 - `js/backdrop.js`: fondo: terreno por tramos, cordilleras, decoración instanciada, nubes, agua y humo; colores por zona y acto.
 - `js/entities.js`: anillos y enemigos (instancias compartidas), postes, meta, muelles y plataformas móviles.
 - `js/fx.js`: chispas al destruir enemigos (partículas en una malla instanciada que se reciclan).
+- `js/models.js`: carga los modelos `.glb` de los enemigos nuevos (`assets/models/`); cada pieza se dibuja como malla instanciada.
+- `tools/blender/make_enemies.py`: crea esos modelos con Blender como módulo de Python (`pip install bpy`; `python tools/blender/make_enemies.py -- assets/models`).
 - `js/world.js`: construye el mundo de una fase en grupos por tramo y oculta los lejanos.
 - `js/player.js`: modelo del erizo y su animación.
 - `js/textures.js`, `js/geo.js`, `js/util.js`: texturas, geometrías compartidas y utilidades.
