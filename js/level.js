@@ -171,20 +171,20 @@ export function buildLevel(zi, ai) {
     if (!quiet) {
       if (x0 > nextCp) { lv.checkpoints.push({ x: x0 + 2, y: top, hit: false }); nextCp = x0 + 170; }
       if (len > 14 && rng() < prof.enemies) {
-        lv.enemies.push({ x: rnd(x0 + 4, x1 - 6), minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });   // se aleja del borde: no espera junto a los huecos
-        if (len > 40 && rng() < 0.5) lv.enemies.push({ x: rnd(x0 + 8, x1 - 10), minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });
+        lv.enemies.push({ x: rnd(x0 + 4, x1 - 6), minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top, r: 0.63 });   // se aleja del borde: no espera junto a los huecos
+        if (len > 40 && rng() < 0.5) lv.enemies.push({ x: rnd(x0 + 8, x1 - 10), minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top, r: 0.63 });
       }
       if (len > 24 && rng() < prof.fly) {              // dron que patrulla sobre el tramo, a la altura de un salto
         const fx0 = rnd(x0 + 4, x1 - 16), fw = rnd(8, 12);
-        lv.enemies.push({ type: 'fly', x: fx0, minX: fx0, maxX: fx0 + fw, dir: rng() < 0.5 ? -1 : 1, speed: rnd(2.2, 3.2), base: top + rnd(1.4, 1.9), y: top + 1.6, phase: rng() * 6, alive: true, inv: 0, r: 0.7 });
+        lv.enemies.push({ type: 'fly', x: fx0, minX: fx0, maxX: fx0 + fw, dir: rng() < 0.5 ? -1 : 1, speed: rnd(2.2, 3.2), base: top + rnd(1.4, 1.9), y: top + 1.6, phase: rng() * 6, alive: true, inv: 0, r: 0.9 });
       }
       if (len > 20 && rng() < prof.hop) {              // saltamontes: camina despacio y da saltos por el tramo
         const hx = rnd(x0 + 4, x1 - 10);
-        lv.enemies.push({ type: 'hop', x: hx, minX: x0 + 2, maxX: x1 - 6, dir: rng() < 0.5 ? -1 : 1, y: top, cd: rnd(0.5, 2), air: false, yv: 0, hv: 0, phase: rng() * 6, alive: true, inv: 0, r: 0.5 });
+        lv.enemies.push({ type: 'hop', x: hx, minX: x0 + 2, maxX: x1 - 6, dir: rng() < 0.5 ? -1 : 1, y: top, cd: rnd(0.5, 2), air: false, yv: 0, hv: 0, phase: rng() * 6, alive: true, inv: 0, r: 0.67 });
       }
       if (len > 20 && rng() < prof.spiny) {            // erizo con púas: solo lo destruye rodar o cargar
         const ex = rnd(x0 + 4, x1 - 8);
-        lv.enemies.push({ type: 'spiny', spiky: true, x: ex, minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, speed: rnd(1.6, 2.2), y: top, phase: rng() * 6, alive: true, inv: 0, r: 0.5 });
+        lv.enemies.push({ type: 'spiny', spiky: true, x: ex, minX: x0 + 2, maxX: x1 - 4, dir: rng() < 0.5 ? -1 : 1, speed: rnd(1.6, 2.2), y: top, phase: rng() * 6, alive: true, inv: 0, r: 0.68 });
       }
       if (len > 24 && rng() < prof.wasp) {             // avispa: ondula sobre el tramo y a veces se lanza en picado
         const wx0 = rnd(x0 + 4, x1 - 14), ww = rnd(8, 12), wb = top + rnd(2.2, 3.2);
@@ -192,7 +192,7 @@ export function buildLevel(zi, ai) {
       }
       if (len > 30 && rng() < prof.shoot) {            // torreta en el suelo, lejos del inicio del tramo (el punto de control no cae en su alcance)
         const sx = rnd(x0 + 16, x1 - 10);
-        lv.enemies.push({ type: 'shoot', x: sx, minX: sx, maxX: sx, dir: -1, speed: 0, y: top, cd: rnd(0.5, 1.5), phase: 0, alive: true, inv: 0, r: 0.5 });
+        lv.enemies.push({ type: 'shoot', x: sx, minX: sx, maxX: sx, dir: -1, speed: 0, y: top, cd: rnd(0.5, 1.5), phase: 0, alive: true, inv: 0, r: 0.71 });
       }
       if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
       if (rng() < 0.1) itemAt(rnd(x0 + 6, x1 - 8), top + 1.3, randItem());
@@ -322,7 +322,7 @@ export function buildLevel(zi, ai) {
       itemAt((Xs + W + Xr) / 2 + rnd(-4, 4), yF + 1.3, randItem());
     }
     if (rng() < 0.6) {
-      lv.enemies.push({ x: rnd(Xs + W + 3, Xr - 10), minX: Xs + W + 1, maxX: Xr - 9, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: yF });
+      lv.enemies.push({ x: rnd(Xs + W + 3, Xr - 10), minX: Xs + W + 1, maxX: Xr - 9, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: yF, r: 0.63 });
     }
     if (rng() < 0.35) lv.enemies.push(makeBot('spider', rnd(Xs + W + 3, Xr - 4), yF + 1.9, rng, { ceilY: top - 4, floorY: yF, minX: Xs + W, maxX: Xr }));
     if (rng() < 0.5) boulder(rnd(Xs + W + 6, Xr - 14), yF);
@@ -352,8 +352,8 @@ export function buildLevel(zi, ai) {
     S.push({ kind: 'platform', x0: bz, x1: xs, y0: DH - 2.2, y1: DH, boost: 1 });
     S.push({ kind: 'platform', x0: xs, x1: dx1, y0: DH - 2.2, y1: DH });
     ringLine(dx0 + 2, dx1 - 2, DH + 1.4, 6);
-    lv.enemies.push({ x: dx0 + 8, minX: dx0 + 2, maxX: dx1 - 6, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: DH, inv: 0, r: 0.5 });
-    if (L > 30) lv.enemies.push({ x: dx1 - 10, minX: dx0 + 14, maxX: dx1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: DH, inv: 0, r: 0.5 });
+    lv.enemies.push({ x: dx0 + 8, minX: dx0 + 2, maxX: dx1 - 6, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: DH, inv: 0, r: 0.71 });
+    if (L > 30) lv.enemies.push({ x: dx1 - 10, minX: dx0 + 14, maxX: dx1 - 4, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: DH, inv: 0, r: 0.71 });
     itemAt(dx0 + 12, DH + 1.3, randItem());
     itemAt(dx0 + 22, DH + 1.3, randItem());
     pathRings(addPath(slidePts(dx1, DH + 0.5, W, DH - top, -1), 'drop'), [0.4, 0.7]);
@@ -417,7 +417,7 @@ export function buildLevel(zi, ai) {
     ringArc(b0 + wd / 2, top + 2.4, wd, 3);
     ringArc(b1 + 9, top + 7.7, 6, 5);                  // arco de anillos sobre la meseta
     if (kind === 'water') {                            // pez saltarín escondido bajo el agua del hueco
-      lv.enemies.push({ type: 'fish', x: (b0 + b1) / 2, minX: b0, maxX: b1, dir: 1, speed: 0, base: top - 2.0, y: top - 2.0, yv: 0, leap: false, cd: rnd(0.5, 2), gap: rnd(2.2, 3.2), alive: true, inv: 0, r: 0.5 });
+      lv.enemies.push({ type: 'fish', x: (b0 + b1) / 2, minX: b0, maxX: b1, dir: 1, speed: 0, base: top - 2.0, y: top - 2.0, yv: 0, leap: false, cd: rnd(0.5, 2), gap: rnd(2.2, 3.2), alive: true, inv: 0, r: 0.61 });
     }
     x = mesa(b1, 6.5, 26, 10);
   };
@@ -532,16 +532,16 @@ export function buildLevel(zi, ai) {
   // Reparto de enemigos: cada tramo de 100 unidades tiene al menos seis, sobre la pista llana y lejos de trampas
   const placeEnemy = (type, ex, s, r) => {
     const y = s.y1, dir = r() < 0.5 ? -1 : 1, phase = r() * 6;
-    const base = { x: ex, minX: Math.max(s.x0 + 2, ex - 4), maxX: Math.min(s.x1 - 3, ex + 4), dir, y, phase, alive: true, inv: 0, r: 0.5 };
+    const base = { x: ex, minX: Math.max(s.x0 + 2, ex - 4), maxX: Math.min(s.x1 - 3, ex + 4), dir, y, phase, alive: true, inv: 0, r: 0.71 };
     switch (type) {
-      case "fly": return { ...base, type, base: y + 1.4 + r() * 0.5, y: y + 1.6, speed: 2.4 + r() * 0.6, r: 0.7 };
+      case "fly": return { ...base, type, base: y + 1.4 + r() * 0.5, y: y + 1.6, speed: 2.4 + r() * 0.6, r: 0.9 };
       case "wasp": return { ...base, type, minX: ex - 6, maxX: ex + 6, r: 0.6, base: y + 2.2 + r(), y: y + 2.6, mode: "patrol", diveT: 0, cd: 1 + r() * 2 };
-      case "hop": return { ...base, type, cd: 0.5 + r() * 1.5, air: false, yv: 0, hv: 0 };
-      case "spiny": return { ...base, type, spiky: true, speed: 1.6 + r() * 0.6 };
-      case "shoot": return { type, x: ex, minX: ex, maxX: ex, dir: -1, speed: 0, y, cd: 1 + r() * 1.5, phase: 0, alive: true, inv: 0, r: 0.5 };
-      case "housefly": return { ...base, type, ax: ex, minX: ex - 5, maxX: ex + 5, speed: 2.2 + r() * 0.8, base: y + 1.1 + r() * 0.5, y: y + 1.4, r: 0.55 };
-      case "worm": return { ...base, type, up: 0, st: "hide", t: 0.5 + r() * 2.5, base: y };
-      case "beetle": return { ...base, type, speed: 2.4 + r() * 0.8 };
+      case "hop": return { ...base, type, cd: 0.5 + r() * 1.5, air: false, yv: 0, hv: 0, r: 0.67 };
+      case "spiny": return { ...base, type, spiky: true, speed: 1.6 + r() * 0.6, r: 0.68 };
+      case "shoot": return { type, x: ex, minX: ex, maxX: ex, dir: -1, speed: 0, y, cd: 1 + r() * 1.5, phase: 0, alive: true, inv: 0, r: 0.71 };
+      case "housefly": return { ...base, type, ax: ex, minX: ex - 5, maxX: ex + 5, speed: 2.2 + r() * 0.8, base: y + 1.1 + r() * 0.5, y: y + 1.4, r: 0.83 };
+      case "worm": return { ...base, type, up: 0, st: "hide", t: 0.5 + r() * 2.5, base: y, r: 0.75 };
+      case "beetle": return { ...base, type, speed: 2.4 + r() * 0.8, r: 0.75 };
       case "shield": case "charger": case "bomb":
         return makeBot(type, ex, y, r, { minX: Math.max(s.x0 + 2, ex - 4), maxX: Math.min(s.x1 - 3, ex + 4) });
       case "laser": return makeBot("laser", ex, y, r);

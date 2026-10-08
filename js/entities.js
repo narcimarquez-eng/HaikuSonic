@@ -7,7 +7,7 @@ import { MODELS } from './models.js';
 import { buildRobots, updateRobots } from './robots.js';
 
 const MAX_SCATTER = 60;
-const ENEMY_SCALE = 1.1;
+const ENEMY_SCALE = 1.55;                                     // caminantes (sin tipo): antes 1.1, ×1.41 para verse como las avispas
 const std = (color, roughness = 0.6, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const M4 = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) => new THREE.Matrix4().compose(
   new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
@@ -87,7 +87,7 @@ function enemySet(geos, mats, N, root) {
 // Crea anillos, enemigos, postes y meta. Anillos y enemigos son instancias compartidas (pocas llamadas de dibujo)
 const MODEL_OF = { fly: 'flyer', shoot: 'shooter', boss: 'boss', wasp: 'wasp', hop: 'hopper', spiny: 'spiky', fish: 'fish', housefly: 'housefly', worm: 'worm', beetle: 'beetle' };   // tipo de enemigo -> modelo de Blender
 const SHOT_MAX = 40;                                                   // proyectiles de enemigos visibles a la vez
-const SIZE_OF = { wasp: 1.25, hop: 1.15, spiny: 1.15, fish: 1.2, housefly: 1.4 };     // los enemigos pequeños se dibujan un poco más grandes
+const SIZE_OF = { wasp: 1.25, fly: 1.29, hop: 1.54, spiny: 1.55, fish: 1.46, housefly: 2.1, shoot: 1.41, worm: 1.5, beetle: 1.5 };     // tamaño de cada modelo: los pequeños se dibujan más grandes (la avispa, de referencia, no cambia)
 // Potenciadores: geometría, tamaño, color y giro en reposo (anillo azul, rombo naranja, estrella amarilla, vida roja)
 const ITEM_STYLE = {
   shield: { geo: RING_GEO, s: 1.3, col: 0x39e6ff, rz: 0 },

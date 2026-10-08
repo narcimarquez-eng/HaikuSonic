@@ -14,12 +14,12 @@ export function makeBot(type, x, y, rng, opt = {}) {
   const dir = rng() < 0.5 ? -1 : 1, phase = rng() * 6;
   const base = { type, x, y, minX: opt.minX ?? x - 4, maxX: opt.maxX ?? x + 4, dir, face: dir, phase, alive: true, inv: 0, r: 0.5, shielded: false };
   switch (type) {
-    case 'shield': return { ...base, r: 0.5 };
-    case 'charger': return { ...base, r: 0.55, st: 'walk', t: 0 };
-    case 'bomb': return { ...base, r: 0.45, st: 'idle', fuse: 0 };
-    case 'spider': return { ...base, r: 0.45, st: 'hang', hangY: y, ceilY: opt.ceilY, floorY: opt.floorY ?? y, vy: 0, flee: 0, t: 0 };
-    case 'laser': return { ...base, r: 0.6, mid: -0.3, amp: 0.85, ang: -0.3 };
-    case 'support': return { ...base, r: 0.6, base: y, y };
+    case 'shield': return { ...base, r: 0.75 };
+    case 'charger': return { ...base, r: 0.83, st: 'walk', t: 0 };
+    case 'bomb': return { ...base, r: 0.68, st: 'idle', fuse: 0 };
+    case 'spider': return { ...base, r: 0.68, st: 'hang', hangY: y, ceilY: opt.ceilY, floorY: opt.floorY ?? y, vy: 0, flee: 0, t: 0 };
+    case 'laser': return { ...base, r: 0.75, mid: -0.3, amp: 0.85, ang: -0.3 };
+    case 'support': return { ...base, r: 0.9, base: y, y };
     default: throw new Error(`robot desconocido: ${type}`);
   }
 }

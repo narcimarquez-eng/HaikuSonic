@@ -10,6 +10,10 @@ const STEEL = 0x3b434c, DARK = 0x2a2f36, LIGHT = 0x9aa3ab, BONE = 0xf0e6d2;
 const solid = (color, roughness = 0.5, metalness = 0.35) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const lamp = () => new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });   // el color lo da cada instancia
 
+// Tamaño de cada robot: multiplica el dibujo entero desde su base. Subidos para que se vean como las avispas; el láser
+// sube menos y su cabeza se compensa en parts() para que el rayo (bots.js, beamOf) siga saliendo de la cabeza
+const SCALE_OF = { shield: 1.5, bomb: 1.5, spider: 1.5, charger: 1.5, laser: 1.25, support: 1.5 };
+
 // Piezas de cada robot, en coordenadas locales (y = 0 en el suelo; mira hacia +x). Una pieza tiene forma (geo), tamaño,
 // posición (at), giro fijo (rot) y color. Con lamp, el color va por instancia (tint, si cambia con el tiempo).
 // anim(e, t) puede devolver { p: [x,y,z], r: [x,y,z] } para mover o girar la pieza en cada fotograma
@@ -59,14 +63,17 @@ function parts(type, acc) {
       ...[[0.3, 0.3], [0.3, -0.3], [-0.3, 0.3], [-0.3, -0.3]].map(([x, z]) =>
         ({ geo: UNIT_BOX, size: [0.14, 0.42, 0.14], at: [x, 0.2, z], color: DARK })),
     ];
-    case 'laser': return [
-      { geo: UNIT_CYL, size: [0.38, 0.35, 0.38], at: [0, 0.18, 0], color: DARK },                      // base
-      { geo: UNIT_CYL, size: [0.1, 0.9, 0.1], at: [0, 0.85, 0], color: LIGHT },                        // poste
-      { geo: UNIT_BOX, size: [0.7, 0.26, 0.3], at: [0, 1.5, 0], color: STEEL,                          // cabeza: apunta el rayo
-        anim: (e) => ({ r: [0, 0, e.ang] }) },
-      { geo: UNIT_SPHERE, size: [0.12, 0.12, 0.12], at: [0, 1.5, 0], color: 0xff2a2a, lamp: true,    // lente
-        anim: (e) => ({ p: [0.36 * Math.cos(e.ang), 0.36 * Math.sin(e.ang), 0], r: [0, 0, 0] }) },
-    ];
+    case 'laser': {
+      const hy = 1.5 / SCALE_OF.laser;   // tras escalar, la cabeza queda a 1.5: de ahí sale el rayo (beamOf)
+      return [
+        { geo: UNIT_CYL, size: [0.38, 0.35, 0.38], at: [0, 0.18, 0], color: DARK },                      // base
+        { geo: UNIT_CYL, size: [0.1, 0.9, 0.1], at: [0, 0.85, 0], color: LIGHT },                        // poste
+        { geo: UNIT_BOX, size: [0.7, 0.26, 0.3], at: [0, hy, 0], color: STEEL,                          // cabeza: apunta el rayo
+          anim: (e) => ({ r: [0, 0, e.ang] }) },
+        { geo: UNIT_SPHERE, size: [0.12, 0.12, 0.12], at: [0, hy, 0], color: 0xff2a2a, lamp: true,    // lente
+          anim: (e) => ({ p: [0.36 * Math.cos(e.ang), 0.36 * Math.sin(e.ang), 0], r: [0, 0, 0] }) },
+      ];
+    }
     case 'support': return [
       { geo: UNIT_CYL, size: [0.5, 0.14, 0.5], at: [0, 0, 0], color: STEEL },                          // disco
       { geo: UNIT_SPHERE, size: [0.26, 0.26, 0.26], at: [0, 0.16, 0], color: acc },                    // cúpula de color
@@ -125,7 +132,7 @@ export function buildRobots(lv, zi, root) {
 export function updateRobots(R, t) {
   for (const g of R.groups) {
     g.list.forEach((e, k) => {
-      const face = e.face ?? e.dir ?? 1, sc = e.alive ? 1 : 0;
+      const face = e.face ?? e.dir ?? 1, sc = (e.alive ? 1 : 0) * SCALE_OF[e.type];
       trs(_root, e.x, e.y, 0, 0, face < 0 ? Math.PI : 0, 0, sc, sc, sc);
       for (const { d, im } of g.pieces) {
         const a = d.anim ? d.anim(e, t) : null;
