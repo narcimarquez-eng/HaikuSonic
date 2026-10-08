@@ -231,7 +231,7 @@ function blades(g, s, rnd, n, cols, lw = 1.2, len = 8) {
 // Texturas reales (three.js examples, licencia MIT). Si no cargan, se usan las procedurales.
 const TEX_FILES = {
   grass: 'assets/textures/grass.jpg', wood: 'assets/textures/wood.jpg', brick: 'assets/textures/brick.jpg',
-  floor: 'assets/textures/floor.jpg', waternormal: 'assets/textures/waternormal.jpg',
+  floor: 'assets/textures/floor.jpg', rock: 'assets/textures/rock_grey.jpg', waternormal: 'assets/textures/waternormal.jpg',
 };
 const FILE_TEX = {};
 async function loadFileTextures() {
@@ -516,7 +516,7 @@ sky.renderOrder = -1;
 scene.add(sky);
 
 let camDist = 16;
-const cam = { x: 0, y: 2, z: 0 };
+const cam = { x: 0, y: 2 };
 function fitCamera() {
   // Garantiza ~22 unidades de ancho visible, también en pantallas estrechas
   const aspect = window.innerWidth / window.innerHeight;
@@ -599,9 +599,73 @@ bindHold(document.getElementById('spin'), () => { input.touchSpin = true; input.
      'ceiling'  saliente de roca: no se puede saltar a través de él
    ============================================================ */
 const slopeAt = (s, x) => s.ya + (s.yb - s.ya) * Math.min(1, Math.max(0, (x - s.x0) / (s.x1 - s.x0)));
-// Túnel de velocidad: el carril se hunde hacia el fondo (z negativa) y vuelve a la pista
-const zPath = (s, x) => -s.tube.depth * (1 - Math.cos(2 * Math.PI * (x - s.x0) / (s.x1 - s.x0))) / 2;
-const laneZ = (lv, x) => { for (const t of lv.tubes) if (x >= t.x0 && x <= t.x1) return zPath(t, x); return 0; };
+// Trayectoria de un tubo vertical (bucle o colina): puntos, longitud de arco, tangente, normal y curvatura con signo
+function buildPath(pts, detach) {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const T = pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const tx = b[0] - a[0], ty = b[1] - a[1], L = Math.hypot(tx, ty) || 1;
+    return [tx / L, ty / L];
+  });
+  const N = T.map(([tx, ty]) => [-ty, tx]);            // normal izquierda: hacia el interior del tubo
+  const K = pts.map((p, i) => {
+    const a = Math.max(0, i - 1), b = Math.min(pts.length - 1, i + 1);
+    const ds = cum[b] - cum[a] || 1;
+    return ((T[b][0] - T[a][0]) * N[i][0] + (T[b][1] - T[a][1]) * N[i][1]) / ds;
+  });
+  return { pts, cum, T, N, K, L: cum[cum.length - 1], detach };
+}
+// Punto, tangente, normal y curvatura de la trayectoria en la longitud de arco s
+function pathAt(path, s) {
+  const c = path.cum;
+  let lo = 0, hi = c.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (c[m] <= s) lo = m; else hi = m; }
+  const j = Math.min(lo + 1, c.length - 1);
+  const u = (s - c[lo]) / ((c[j] - c[lo]) || 1);
+  const mix = (A, B) => A + (B - A) * u;
+  const tx = mix(path.T[lo][0], path.T[j][0]), ty = mix(path.T[lo][1], path.T[j][1]);
+  const L = Math.hypot(tx, ty) || 1;
+  const T = [tx / L, ty / L];
+  return { P: [mix(path.pts[lo][0], path.pts[j][0]), mix(path.pts[lo][1], path.pts[j][1])], T, N: [-T[1], T[0]], K: mix(path.K[lo], path.K[j]) };
+}
+const LOOP_R = 3;   // radio del bucle vertical (la base está al nivel de la pista)
+function loopPts(x0, top, R) {
+  const pts = [];
+  for (let i = 0; i <= 160; i++) { const th = (i / 160) * 2 * Math.PI; pts.push([x0 + R * Math.sin(th), top + R - R * Math.cos(th)]); }
+  return pts;
+}
+function humpPts(x0, x1, top, H) {
+  const pts = [];
+  for (let i = 0; i <= 120; i++) { const u = i / 120; pts.push([x0 + (x1 - x0) * u, top + H * (1 - Math.cos(2 * Math.PI * u)) / 2]); }
+  return pts;
+}
+// Movimiento sobre el tubo: la gravedad actúa a lo largo de la trayectoria
+function pathStep(dt) {
+  const p = player, pt = p.path;
+  const q = pathAt(pt, p.s);
+  p.pv += -GRAVITY * q.T[1] * dt;
+  // En un bucle, el jugador se despega si no hay fuerza centrípeta suficiente en lo alto
+  if (pt.detach && p.pv * p.pv * q.K + GRAVITY * q.N[1] < 0) {
+    p.path = null;
+    p.vx = p.pv * q.T[0]; p.vy = p.pv * q.T[1];
+    p.x = q.P[0] + q.N[0] * 0.5; p.y = q.P[1] + q.N[1] * 0.5;
+    p.grounded = false; p.groundSolid = null;
+    return;
+  }
+  p.s += p.pv * dt;
+  if (p.s >= pt.L || p.s <= 0) {                        // sale por el extremo: vuelve a la pista
+    const end = p.s >= pt.L ? pt.pts[pt.pts.length - 1] : pt.pts[0];
+    p.path = null;
+    p.x = end[0]; p.y = end[1] + 0.5;
+    p.vx = p.pv; p.vy = 0;
+    p.grounded = false; p.groundSolid = null;
+    return;
+  }
+  const r = pathAt(pt, p.s);
+  p.x = r.P[0] + r.N[0] * 0.5; p.y = r.P[1] + r.N[1] * 0.5;
+  p.vx = p.pv * r.T[0]; p.vy = p.pv * r.T[1];
+}
 
 // Altura de la superficie bajo el jugador en la coordenada x
 function laneY(solids, x) {
@@ -620,7 +684,7 @@ function buildLevel(n) {
   const length = 160 + act * 40 + zoneIdx * 20;
   const lv = {
     n, zoneIdx, act, length, endX: 0, goalX: 0, goalY: 0, killY: ZONES[zoneIdx].killY,
-    t: 0, solids: [], enemies: [], rings: [], scatter: [], checkpoints: [], tubes: [],
+    t: 0, solids: [], enemies: [], rings: [], scatter: [], checkpoints: [], paths: [],
   };
   const S = lv.solids;
 
@@ -637,22 +701,35 @@ function buildLevel(n) {
   // Saliente de roca: se pasa por debajo, pero no se puede saltar a través de él
   const overhang = (ax, top) => S.push({ kind: 'ceiling', x0: ax, x1: ax + 5, y0: top + 2.8, y1: top + 4.1, base: top });
   // Tramo plano: suelo + enemigos, anillos, muelles, plataformas y salientes
-  // Túnel: un tramo de carril que se hunde al fondo, con bóveda y velocidad
-  const tube = (a, b, top) => {
-    const sol = { kind: 'ground', x0: a, x1: b, y0: -4, y1: top, boost: 1, tube: { depth: 5.5 } };
-    S.push(sol); lv.tubes.push(sol);
-    for (let i = 0; i < 7; i++) {
-      const x = a + (b - a) * (0.1 + i * 0.13);
-      lv.rings.push({ x, y: top + 1.4, z: zPath(sol, x), taken: false });
+  // Tubo vertical: un bucle (hay que venir rápido) o una colina por dentro de un tubo
+  const addPath = (pts, detach, x0, top) => {
+    const pt = { ...buildPath(pts, detach), x0, y0: top };
+    lv.paths.push(pt);
+    return pt;
+  };
+  const pathRings = (pt, fracs) => {
+    for (const f of fracs) {
+      const q = pathAt(pt, pt.L * f);
+      lv.rings.push({ x: q.P[0] + q.N[0] * 0.5, y: q.P[1] + q.N[1] * 0.5, taken: false });
     }
   };
-  const flat = (x0, x1, top, quiet = false, allowTube = true) => {
+  const flat = (x0, x1, top, quiet = false, allowPath = true) => {
     const len = x1 - x0;
-    if (!quiet && allowTube && len > 42 && rng() < 0.3) {   // el tramo se parte: plano, túnel, plano
-      const a = rnd(x0 + 3, x1 - 40), b = a + rnd(28, 34);
-      flat(x0, a, top, false, false);
-      tube(a, b, top);
-      flat(b, x1, top, false, false);
+    if (!quiet && allowPath && len > 34 && rng() < 0.4) {
+      if (rng() < 0.55) {                             // bucle: antes hay una franja de aceleración
+        const a = rnd(x0 + 8, x1 - 22);
+        flat(x0, a - 6, top, false, false);
+        S.push({ kind: 'ground', x0: a - 6, x1: a, y0: -4, y1: top, boost: 1 });
+        S.push({ kind: 'ground', x0: a, x1: a + 7, y0: -4, y1: top });
+        pathRings(addPath(loopPts(a, top, LOOP_R), true, a, top), [0.15, 0.3, 0.5, 0.7, 0.85]);
+        flat(a + 7, x1, top, false, false);
+      } else {                                        // colina por dentro de un tubo
+        const a = rnd(x0 + 4, x1 - 26), b = a + rnd(18, 22);
+        flat(x0, a, top, false, false);
+        S.push({ kind: 'ground', x0: a, x1: b, y0: -4, y1: top });
+        pathRings(addPath(humpPts(a, b, top, 3), false, a, top), [0.2, 0.35, 0.5, 0.65, 0.8]);
+        flat(b, x1, top, false, false);
+      }
       return;
     }
     if (!quiet && len > 16 && rng() < 0.35) {          // franja de aceleración
@@ -1060,58 +1137,22 @@ function strip(pairs, uvs) {
   geo.computeVertexNormals();
   return geo;
 }
-// Túnel de velocidad: suelo con hierba y tierra que se hunde al fondo, y bóveda de tubo detrás
-function tubeVisual(g, s, T, zone) {
-  const n = 48, W = 2.2, R = 2.6, K = 20, cy = s.y1 + 1.8;
-  const pts = [];
-  for (let i = 0; i <= n; i++) {
-    const x = s.x0 + (s.x1 - s.x0) * i / n;
-    pts.push(new THREE.Vector3(x, s.y1, zPath(s, x)));
-  }
-  // Normal horizontal de cada muestra, orientada hacia la cámara
-  const nrm = pts.map((p, i) => {
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n, i + 1)];
-    const tx = b.x - a.x, tz = b.z - a.z, L = Math.hypot(tx, tz) || 1;
-    let nx = -tz / L, nz = tx / L;
-    if (nz < 0) { nx = -nx; nz = -nz; }
-    return new THREE.Vector3(nx, 0, nz);
+// Tubo vertical visto de frente: paredes laterales, interior oscuro y carril brillante
+function pathVisual(g, pt, zone, T) {
+  const band = (a0, a1, z) => pt.pts.map((p, i) => {
+    const N = pt.N[i];
+    return [new THREE.Vector3(p[0] + N[0] * a0, p[1] + N[1] * a0, z), new THREE.Vector3(p[0] + N[0] * a1, p[1] + N[1] * a1, z)];
   });
-  // Suelo: franja de hierba y dos caras de tierra
-  const top = [], topUv = [], dirtR = [], dirtRUv = [], dirtL = [], dirtLUv = [];
-  pts.forEach((p, i) => {
-    const N = nrm[i];
-    const L = p.clone().addScaledVector(N, -W), Rr = p.clone().addScaledVector(N, W);
-    top.push([L, Rr]);
-    topUv.push(p.x / 4, -W / 4, p.x / 4, W / 4);
-    dirtR.push([Rr, Rr.clone().setY(s.y1 - 3.5)]); dirtRUv.push(p.x / 4, 0, p.x / 4, 0.9);
-    dirtL.push([L, L.clone().setY(s.y1 - 3.5)]); dirtLUv.push(p.x / 4, 0, p.x / 4, 0.9);
-  });
-  const grassM = new THREE.MeshStandardMaterial({ map: tiled(T.grass, 1, 1), roughness: 0.85, side: THREE.DoubleSide });
-  const dirtM = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, 1, 1), roughness: 0.95, side: THREE.DoubleSide });
-  g.add(new THREE.Mesh(strip(top, topUv), grassM));
-  g.add(new THREE.Mesh(strip(dirtR, dirtRUv), dirtM));
-  g.add(new THREE.Mesh(strip(dirtL, dirtLUv), dirtM));
-  // Bóveda: media circunferencia por encima de la pista, detrás del jugador
-  const col = zone.decor === 'green' ? 0x2e6b3a : zone.decor === 'industrial' ? 0x4a4f57 : 0x2c6e8f;
-  const archM = new THREE.MeshStandardMaterial({ color: col, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide, emissive: zone.accent, emissiveIntensity: 0.12 });
-  const pos = [], idx = [];
-  pts.forEach((p, i) => {
-    const N = nrm[i], c = new THREE.Vector3(p.x, cy, p.z);
-    for (let k = 0; k <= K; k++) {
-      const phi = Math.PI * k / K;
-      const q = c.clone().addScaledVector(N, -R * Math.cos(phi)).add(new THREE.Vector3(0, R * Math.sin(phi), 0));
-      pos.push(q.x, q.y, q.z);
-    }
-  });
-  for (let i = 0; i < n; i++) for (let k = 0; k < K; k++) {
-    const a = i * (K + 1) + k, b = a + 1, c = a + (K + 1), d = c + 1;
-    idx.push(a, c, b, b, c, d);
-  }
-  const arcGeo = new THREE.BufferGeometry();
-  arcGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  arcGeo.setIndex(idx);
-  arcGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(arcGeo, archM));
+  const uvs = pt.cum.flatMap((c) => [c / 4, 0, c / 4, 1]);
+  const rimM = zone.decor === 'industrial'
+    ? new THREE.MeshStandardMaterial({ color: 0xf2c200, emissive: 0x3a2a00, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide })
+    : new THREE.MeshStandardMaterial({ map: tiled(T.grass, 1, 1), color: zone.decor === 'water' ? 0xffe9a8 : 0xffffff, roughness: 0.85, side: THREE.DoubleSide });
+  const innerM = new THREE.MeshStandardMaterial({ color: zone.decor === 'green' ? 0x1d3d2a : 0x1f2833, roughness: 0.9, side: THREE.DoubleSide });
+  const railM = new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 0.9, side: THREE.DoubleSide });
+  g.add(new THREE.Mesh(strip(band(-1.25, 1.25, -1.5), uvs), innerM));
+  g.add(new THREE.Mesh(strip(band(1.25, 1.8, 0), uvs), rimM));
+  g.add(new THREE.Mesh(strip(band(-1.8, -1.25, 0), uvs), rimM));
+  g.add(new THREE.Mesh(strip(band(-0.08, 0.08, -1.4), uvs), railM));
 }
 
 function buildVisuals(lv, zone) {
@@ -1147,7 +1188,6 @@ function buildVisuals(lv, zone) {
 
   // Pista
   for (const s of S) {
-    if (s.tube) { tubeVisual(g, s, T, zone); continue; }
     if (s.kind === 'ground') {
       const w = s.x1 - s.x0, top = s.y1, cx = (s.x0 + s.x1) / 2;
       const dirtM = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, w / 4, (top + 4) / 4), roughness: 0.95 });
@@ -1233,6 +1273,7 @@ function buildVisuals(lv, zone) {
     }
   }
 
+  for (const pt of lv.paths) pathVisual(g, pt, zone, T);
   // Hierba 3D sobre las superficies de la zona verde
   if (grassSurfs.length) addGrass(g, grassSurfs, 4, mulberry32(lv.n * 17 + 3), true);
 
@@ -1303,7 +1344,7 @@ function buildVisuals(lv, zone) {
    Jugador: erizo azul con púas, guantes, zapatillas y ojos
    ============================================================ */
 const player = {
-  x: 0, y: 2, z: 0, vx: 0, vy: 0, rings: 0, facing: 1,
+  x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1,
   grounded: false, groundSolid: null, jumping: false, spinAir: false,
   crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
 };
@@ -1471,6 +1512,7 @@ function resolveY(p, solids, prevBottom) {
 
 function stepPlayer(dt) {
   const p = player, lv = currentLevel;
+  if (p.path) { pathStep(dt); return; }
   const ax = readAxisX();
   const down = readDown();
   p.invT = Math.max(0, p.invT - dt);
@@ -1532,6 +1574,17 @@ function stepPlayer(dt) {
   if (p.grounded && p.groundSolid && p.groundSolid.boost && (p.vx > 0 || ax > 0.1)) {
     p.vx = Math.max(p.vx, BOOST_V);
   }
+  // Entrada a un tubo vertical al cruzar su base sobre la pista hacia la derecha
+  if (p.grounded && p.vx > 0) {
+    for (const pt of lv.paths) {
+      if (prevX < pt.x0 && p.x >= pt.x0) {
+        p.path = pt; p.s = 0; p.pv = p.vx;
+        p.x = pt.x0; p.y = pt.y0 + 0.5;
+        p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
+        break;
+      }
+    }
+  }
 }
 
 /* ============================================================
@@ -1573,7 +1626,7 @@ function die() {
   const p = player;
   p.x = checkpoint.x; p.y = checkpoint.y + 1;
   p.vx = 0; p.vy = 0; p.rings = 0; p.invT = 1.5;
-  p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0; p.spinAir = false;
+  p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0; p.spinAir = false; p.path = null;
 }
 
 function stepWorld(dt) {
@@ -1590,7 +1643,6 @@ function stepWorld(dt) {
   }
 
   stepPlayer(dt);
-  p.z = laneZ(lv, p.x);
 
   // Enemigos
   for (const e of lv.enemies) {
@@ -1616,8 +1668,8 @@ function stepWorld(dt) {
   // Anillos
   for (const r of lv.rings) {
     if (r.taken) continue;
-    const dx = r.x - p.x, dy = r.y - p.y, dz = (r.z || 0) - p.z;
-    if (dx * dx + dy * dy + dz * dz < RING_R * RING_R) { r.taken = true; p.rings++; }
+    const dx = r.x - p.x, dy = r.y - p.y;
+    if (dx * dx + dy * dy < RING_R * RING_R) { r.taken = true; p.rings++; }
   }
   // Anillos dispersos (tras recibir daño): caen y se pueden recoger tras un instante
   for (let i = lv.scatter.length - 1; i >= 0; i--) {
@@ -1656,9 +1708,8 @@ function updateCamera(dt) {
   const ty = p.y + 1.2;
   cam.x += (tx - cam.x) * (1 - Math.exp(-dt * 5));
   cam.y += (ty - cam.y) * (1 - Math.exp(-dt * 3));
-  cam.z += (p.z * 0.7 - cam.z) * (1 - Math.exp(-dt * 4));
-  camera.position.set(cam.x, cam.y + 1.2, camDist + cam.z);
-  camera.lookAt(cam.x, cam.y, cam.z);
+  camera.position.set(cam.x, cam.y + 1.2, camDist);
+  camera.lookAt(cam.x, cam.y, 0);
   sky.position.copy(camera.position);
   // El sol y su zona de sombras siguen a la cámara
   sun.position.set(cam.x + 9, cam.y + 16, 22);
@@ -1673,7 +1724,7 @@ function updateVisuals(t, dt) {
 
   // Jugador. Escala visual 1.3; los pies quedan sobre la caja de colisión
   const VS = 1.3;
-  P.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, p.z);
+  P.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, 0);
   P.root.scale.set(p.facing * VS, VS, VS);
   P.root.visible = !(p.invT > 0 && Math.floor(t * 16) % 2 === 0);
   // Modo bola: al rodar o durante un salto con giro
@@ -1683,7 +1734,8 @@ function updateVisuals(t, dt) {
   P.feet.forEach((f) => (f.visible = !ball));
   P.backSpikes.visible = !ball;
   P.ballSpikes.visible = ball;
-  if (p.rolling) { P.air = 0; P.spin.rotation.z = -p.roll; }
+  if (p.path) { P.air = 0; P.spin.rotation.z = -p.s / 0.8; }
+  else if (p.rolling) { P.air = 0; P.spin.rotation.z = -p.roll; }
   else if (p.spinAir) { P.air -= dt * 18; P.spin.rotation.z = P.air; }
   else { P.air = 0; P.spin.rotation.z = 0; }
   animatePlayer(t, dt);
@@ -1717,7 +1769,7 @@ function updateVisuals(t, dt) {
 
   // Anillos (giran; los recogidos se ocultan)
   lv.rings.forEach((r, i) => {
-    dummy.position.set(r.x, r.y, r.z || 0);
+    dummy.position.set(r.x, r.y, 0);
     dummy.rotation.set(0, t * 3 + i * 0.4, 0);
     dummy.scale.setScalar(r.taken ? 0 : 1);
     dummy.updateMatrix();
@@ -1775,7 +1827,7 @@ function loadLevel(n) {
 
   Object.assign(player, {
     x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1, grounded: false, groundSolid: null,
-    jumping: false, spinAir: false, crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
+    jumping: false, spinAir: false, path: null, crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
   });
   checkpoint = { x: 0, y: 2 };
   cam.x = player.x; cam.y = player.y;

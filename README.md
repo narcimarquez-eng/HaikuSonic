@@ -33,12 +33,12 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Arcos de roca en el fondo, tótems, setas, palmeras, muelles y montañas lejanas.
 - Enemigos robot con cúpula, antenas y ruedas que giran.
 - Piedras sólidas: se saltan o se rodean, nunca se atraviesan.
-- Túneles de velocidad: el carril se hunde al fondo bajo una bóveda de tubo.
+- Tubos verticales: bucles (hay que venir rápido: la franja antes da el impulso) y colinas por dentro de un tubo ondulado.
 - El erizo gira en el salto y rueda al correr con SPIN.
 
 ## Limitaciones actuales
 
-- Sin bucles. Los túneles de velocidad se ven como un tubo sobre el carril que se hunde al fondo; no hay tubos que atraviesen la pantalla.
+- Sin tubos que se crucen en profundidad (eje Z): los tubos son verticales, en el plano de la pantalla.
 - Sin raíles con cuerdas ni cadenas colgantes todavía.
 - Sin sonido.
 - Los escenarios son geometría procedural de Three.js; no se usan modelos de Blender.
