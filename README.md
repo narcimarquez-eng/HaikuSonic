@@ -32,15 +32,22 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Hierba 3D (briznas instanciadas) y flores sobre el suelo de la zona verde; suelo con cuadros estilo Green Hill.
 - Arcos de roca en el fondo, tótems, setas, palmeras, muelles y montañas lejanas.
 - Enemigos robot con cúpula, antenas y ruedas que giran.
+- Piedras sólidas: se saltan o se rodean, nunca se atraviesan.
+- Túneles de velocidad: el carril se hunde al fondo bajo una bóveda de tubo.
 - El erizo gira en el salto y rueda al correr con SPIN.
 
 ## Limitaciones actuales
 
-- Sin bucles, tubos ni túneles por los que el carril atraviese la pantalla: con esta cámara 2.5D taparían al jugador. Los salientes de roca son la alternativa.
+- Sin bucles. Los túneles de velocidad se ven como un tubo sobre el carril que se hunde al fondo; no hay tubos que atraviesen la pantalla.
 - Sin raíles con cuerdas ni cadenas colgantes todavía.
 - Sin sonido.
 - Los escenarios son geometría procedural de Three.js; no se usan modelos de Blender.
 
+## Texturas
+
+Las texturas de hierba, madera, ladrillo, suelo y agua son imágenes de muestra de three.js (MIT). Ver `assets/textures/README.md`.
+
 ## Estructura
 
 - `index.html`: el juego completo (HTML, CSS y JavaScript). Three.js se carga desde jsDelivr (v0.160.0).
+- `assets/textures/`: texturas de muestra usadas por el juego.

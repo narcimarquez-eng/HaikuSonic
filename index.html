@@ -228,6 +228,25 @@ function blades(g, s, rnd, n, cols, lw = 1.2, len = 8) {
   }
 }
 
+// Texturas reales (three.js examples, licencia MIT). Si no cargan, se usan las procedurales.
+const TEX_FILES = {
+  grass: 'assets/textures/grass.jpg', wood: 'assets/textures/wood.jpg', brick: 'assets/textures/brick.jpg',
+  floor: 'assets/textures/floor.jpg', waternormal: 'assets/textures/waternormal.jpg',
+};
+const FILE_TEX = {};
+async function loadFileTextures() {
+  const loader = new THREE.TextureLoader();
+  await Promise.all(Object.entries(TEX_FILES).map(async ([k, url]) => {
+    try {
+      const t = await loader.loadAsync(url);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = 4;
+      t.colorSpace = k === 'waternormal' ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+      FILE_TEX[k] = t;
+    } catch (e) { /* sin textura real: se usa la procedural */ }
+  }));
+}
+
 const TEX = {};
 function zoneTex(zi) {
   if (TEX[zi]) return TEX[zi];
@@ -349,6 +368,10 @@ function zoneTex(zi) {
     T.leaf = T.foliage;
     T.hill = T.foliage;
   }
+  if (zi === 0 && FILE_TEX.grass) T.grass = FILE_TEX.grass;
+  if (zi === 0 && FILE_TEX.wood) { T.plank = FILE_TEX.wood; T.platTop = FILE_TEX.wood; }
+  if (zi === 1 && FILE_TEX.floor) T.grass = FILE_TEX.floor;
+  if (zi === 1 && FILE_TEX.brick) T.brick = FILE_TEX.brick;
   TEX[zi] = T;
   return T;
 }
@@ -493,7 +516,7 @@ sky.renderOrder = -1;
 scene.add(sky);
 
 let camDist = 16;
-const cam = { x: 0, y: 2 };
+const cam = { x: 0, y: 2, z: 0 };
 function fitCamera() {
   // Garantiza ~22 unidades de ancho visible, también en pantallas estrechas
   const aspect = window.innerWidth / window.innerHeight;
@@ -576,11 +599,14 @@ bindHold(document.getElementById('spin'), () => { input.touchSpin = true; input.
      'ceiling'  saliente de roca: no se puede saltar a través de él
    ============================================================ */
 const slopeAt = (s, x) => s.ya + (s.yb - s.ya) * Math.min(1, Math.max(0, (x - s.x0) / (s.x1 - s.x0)));
+// Túnel de velocidad: el carril se hunde hacia el fondo (z negativa) y vuelve a la pista
+const zPath = (s, x) => -s.tube.depth * (1 - Math.cos(2 * Math.PI * (x - s.x0) / (s.x1 - s.x0))) / 2;
+const laneZ = (lv, x) => { for (const t of lv.tubes) if (x >= t.x0 && x <= t.x1) return zPath(t, x); return 0; };
 
 // Altura de la superficie bajo el jugador en la coordenada x
 function laneY(solids, x) {
   for (const s of solids) {
-    if (s.kind === 'platform' || s.kind === 'spring' || s.kind === 'ceiling') continue;
+    if (s.kind === 'platform' || s.kind === 'spring' || s.kind === 'ceiling' || s.kind === 'block') continue;
     if (x < s.x0 || x > s.x1) continue;
     return s.kind === 'slope' ? slopeAt(s, x) : s.y1;
   }
@@ -594,7 +620,7 @@ function buildLevel(n) {
   const length = 160 + act * 40 + zoneIdx * 20;
   const lv = {
     n, zoneIdx, act, length, endX: 0, goalX: 0, goalY: 0, killY: ZONES[zoneIdx].killY,
-    t: 0, solids: [], enemies: [], rings: [], scatter: [], checkpoints: [],
+    t: 0, solids: [], enemies: [], rings: [], scatter: [], checkpoints: [], tubes: [],
   };
   const S = lv.solids;
 
@@ -611,8 +637,24 @@ function buildLevel(n) {
   // Saliente de roca: se pasa por debajo, pero no se puede saltar a través de él
   const overhang = (ax, top) => S.push({ kind: 'ceiling', x0: ax, x1: ax + 5, y0: top + 2.8, y1: top + 4.1, base: top });
   // Tramo plano: suelo + enemigos, anillos, muelles, plataformas y salientes
-  const flat = (x0, x1, top, quiet = false) => {
+  // Túnel: un tramo de carril que se hunde al fondo, con bóveda y velocidad
+  const tube = (a, b, top) => {
+    const sol = { kind: 'ground', x0: a, x1: b, y0: -4, y1: top, boost: 1, tube: { depth: 5.5 } };
+    S.push(sol); lv.tubes.push(sol);
+    for (let i = 0; i < 7; i++) {
+      const x = a + (b - a) * (0.1 + i * 0.13);
+      lv.rings.push({ x, y: top + 1.4, z: zPath(sol, x), taken: false });
+    }
+  };
+  const flat = (x0, x1, top, quiet = false, allowTube = true) => {
     const len = x1 - x0;
+    if (!quiet && allowTube && len > 42 && rng() < 0.3) {   // el tramo se parte: plano, túnel, plano
+      const a = rnd(x0 + 3, x1 - 40), b = a + rnd(28, 34);
+      flat(x0, a, top, false, false);
+      tube(a, b, top);
+      flat(b, x1, top, false, false);
+      return;
+    }
     if (!quiet && len > 16 && rng() < 0.35) {          // franja de aceleración
       const a = rnd(x0 + 3, x1 - 12), b = a + rnd(6, 9);
       S.push({ kind: 'ground', x0, x1: a, y0: -4, y1: top });
@@ -626,6 +668,10 @@ function buildLevel(n) {
         lv.enemies.push({ x: rnd(x0 + 4, x1 - 4), minX: x0 + 1, maxX: x1 - 1, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: top });
       }
       if (rng() < 0.5) ringArc(rnd(x0 + 2, x1 - 6), top + 1.2, 4.5, 5);
+      if (len > 8 && rng() < 0.3) {                      // piedra sólida sobre el suelo: se salta o se rodea
+        const bx = rnd(x0 + 4, x1 - 6);
+        S.push({ kind: 'block', x0: bx, x1: bx + 1.3, y0: top, y1: top + 1.2 });
+      }
       if (len > 8 && rng() < 0.22) {
         const sx = rnd(x0 + 2, x1 - 3);
         S.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0: top, y1: top + 0.6, power: SPRING_V, squash: 0 });
@@ -633,6 +679,7 @@ function buildLevel(n) {
       if (len > 10 && rng() < 0.3) {
         const px = rnd(x0 + 2, x1 - 7), pw = rnd(3, 5), py = top + rnd(3.2, 4);
         S.push({ kind: 'platform', x0: px, x1: px + pw, y0: py - 0.6, y1: py });
+        if (rng() < 0.4) S.push({ kind: 'block', x0: px + 0.5, x1: px + 1.8, y0: py, y1: py + 1.2 });
         ringArc(px + pw / 2, py + 1.1, pw, 5);
         S.push({ kind: 'spring', x0: px + 0.3, x1: px + 1.5, y0: top, y1: top + 0.6, power: SPRING_V, squash: 0 });
       }
@@ -657,7 +704,7 @@ function buildLevel(n) {
   flat(-10, 14, 0, true);
   let x = 14, cy = 0, nextCp = 50;
   while (x < length) {
-    const seg = rnd(14, 30);
+    const seg = rng() < 0.4 ? rnd(44, 58) : rnd(14, 30);   // tramos largos: zonas para correr y túneles
     flat(x, x + seg, cy);
     if (x + seg > nextCp) { lv.checkpoints.push({ x: x + 1.5, y: cy, hit: false }); nextCp = x + seg + 50; }
     x += seg;
@@ -867,7 +914,8 @@ function buildBackdrop(lv, zone, T, g) {
       if (r < 0.4) {                                    // nave con ventanas y chimenea
         const w = 6 + rnd() * 6, h = 7 + rnd() * 12, dp = 5 + rnd() * 3;
         const win = new THREE.MeshStandardMaterial({ map: tiled(T.leaf, w / 4, h / 4), roughness: 0.6, emissive: 0x2a1600, emissiveIntensity: 0.25 });
-        addBox(g, [side, side, roof, side, win, side], sp.x, y + h / 2, zb, w, h, dp);
+        const bside = new THREE.MeshStandardMaterial({ map: tiled(T.brick || T.dirt, w / 4, h / 4), roughness: 0.8 });
+        addBox(g, [bside, bside, roof, bside, win, bside], sp.x, y + h / 2, zb, w, h, dp);
         addBox(g, steel, sp.x + w * 0.2, y + h + 0.35, zb, w * 0.35, 0.7, dp * 0.5);
         if (rnd() < 0.7) {
           const top = 4 + rnd() * 5, cxp = sp.x - w * 0.25;
@@ -997,6 +1045,75 @@ function buildGear(mat) {
   return gear;
 }
 
+// Franja de malla entre dos líneas de muestras (cada muestra aporta dos vértices)
+function strip(pairs, uvs) {
+  const geo = new THREE.BufferGeometry();
+  const pos = [], idx = [];
+  pairs.forEach(([a, b]) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z));
+  for (let i = 0; i < pairs.length - 1; i++) {
+    const a = 2 * i, b = a + 1, c = a + 2, d = a + 3;
+    idx.push(a, b, c, b, d, c);
+  }
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+// Túnel de velocidad: suelo con hierba y tierra que se hunde al fondo, y bóveda de tubo detrás
+function tubeVisual(g, s, T, zone) {
+  const n = 48, W = 2.2, R = 2.6, K = 20, cy = s.y1 + 1.8;
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const x = s.x0 + (s.x1 - s.x0) * i / n;
+    pts.push(new THREE.Vector3(x, s.y1, zPath(s, x)));
+  }
+  // Normal horizontal de cada muestra, orientada hacia la cámara
+  const nrm = pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n, i + 1)];
+    const tx = b.x - a.x, tz = b.z - a.z, L = Math.hypot(tx, tz) || 1;
+    let nx = -tz / L, nz = tx / L;
+    if (nz < 0) { nx = -nx; nz = -nz; }
+    return new THREE.Vector3(nx, 0, nz);
+  });
+  // Suelo: franja de hierba y dos caras de tierra
+  const top = [], topUv = [], dirtR = [], dirtRUv = [], dirtL = [], dirtLUv = [];
+  pts.forEach((p, i) => {
+    const N = nrm[i];
+    const L = p.clone().addScaledVector(N, -W), Rr = p.clone().addScaledVector(N, W);
+    top.push([L, Rr]);
+    topUv.push(p.x / 4, -W / 4, p.x / 4, W / 4);
+    dirtR.push([Rr, Rr.clone().setY(s.y1 - 3.5)]); dirtRUv.push(p.x / 4, 0, p.x / 4, 0.9);
+    dirtL.push([L, L.clone().setY(s.y1 - 3.5)]); dirtLUv.push(p.x / 4, 0, p.x / 4, 0.9);
+  });
+  const grassM = new THREE.MeshStandardMaterial({ map: tiled(T.grass, 1, 1), roughness: 0.85, side: THREE.DoubleSide });
+  const dirtM = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, 1, 1), roughness: 0.95, side: THREE.DoubleSide });
+  g.add(new THREE.Mesh(strip(top, topUv), grassM));
+  g.add(new THREE.Mesh(strip(dirtR, dirtRUv), dirtM));
+  g.add(new THREE.Mesh(strip(dirtL, dirtLUv), dirtM));
+  // Bóveda: media circunferencia por encima de la pista, detrás del jugador
+  const col = zone.decor === 'green' ? 0x2e6b3a : zone.decor === 'industrial' ? 0x4a4f57 : 0x2c6e8f;
+  const archM = new THREE.MeshStandardMaterial({ color: col, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide, emissive: zone.accent, emissiveIntensity: 0.12 });
+  const pos = [], idx = [];
+  pts.forEach((p, i) => {
+    const N = nrm[i], c = new THREE.Vector3(p.x, cy, p.z);
+    for (let k = 0; k <= K; k++) {
+      const phi = Math.PI * k / K;
+      const q = c.clone().addScaledVector(N, -R * Math.cos(phi)).add(new THREE.Vector3(0, R * Math.sin(phi), 0));
+      pos.push(q.x, q.y, q.z);
+    }
+  });
+  for (let i = 0; i < n; i++) for (let k = 0; k < K; k++) {
+    const a = i * (K + 1) + k, b = a + 1, c = a + (K + 1), d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  const arcGeo = new THREE.BufferGeometry();
+  arcGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  arcGeo.setIndex(idx);
+  arcGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(arcGeo, archM));
+}
+
 function buildVisuals(lv, zone) {
   const g = new THREE.Group();
   const T = zoneTex(lv.zoneIdx);
@@ -1010,6 +1127,13 @@ function buildVisuals(lv, zone) {
   const rockM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, 1, 1), roughness: 0.95 });
   const ropeM = std(0xc9a46a, 0.9);
   const grassSurfs = [];
+  // Soportes de plataformas: columnas detrás de la pista, solo donde hay suelo debajo
+  const supportsUnder = (sl, mat) => {
+    for (const px of [sl.x0 + 0.5, sl.x1 - 0.5]) {
+      const gy = laneY(S, px);
+      if (gy > -1 && gy < sl.y0 - 0.2) addBox(g, mat, px, (gy + sl.y0) / 2, -1.2, 0.55, sl.y0 - gy, 0.55);
+    }
+  };
 
   lv.smoke = [];
   if (kind === 'industrial') {
@@ -1023,12 +1147,13 @@ function buildVisuals(lv, zone) {
 
   // Pista
   for (const s of S) {
+    if (s.tube) { tubeVisual(g, s, T, zone); continue; }
     if (s.kind === 'ground') {
       const w = s.x1 - s.x0, top = s.y1, cx = (s.x0 + s.x1) / 2;
       const dirtM = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, w / 4, (top + 4) / 4), roughness: 0.95 });
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.grass, w / 4, 0.25), roughness: 0.85 });
       const topM = surfMat(T, T.grass, w, 4.4);
-      addBox(g, dirtM, cx, (top - 4) / 2, 0, w, top + 4, 4);
+      addBox(g, dirtM, cx, (top - 4.5) / 2, 0, w, top + 3.5, 4);   // la tierra queda 0.5 por debajo de la hierba
       addBox(g, [sideM, sideM, topM, dirtM, sideM, sideM], cx, top - 0.25, 0, w, 0.5, 4.4);
       if (s.boost) {                                    // franja de aceleración con flechas
         const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
@@ -1039,12 +1164,19 @@ function buildVisuals(lv, zone) {
     } else if (s.kind === 'slope') {
       const dirtS = new THREE.MeshStandardMaterial({ map: tiled(T.dirt, 0.25, 0.25), roughness: 0.95 });
       const grassS = surfMat(T, T.grass, 4, 4, 0.8);
-      prism(g, [[s.x0, -4], [s.x1, -4], [s.x1, s.yb], [s.x0, s.ya]], -2, 4, dirtS);
+      prism(g, [[s.x0, -4], [s.x1, -4], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2, 4, dirtS);
       prism(g, [[s.x0, s.ya], [s.x1, s.yb], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2.2, 4.4, grassS);
       if (kind === 'green') grassSurfs.push({ x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: (x) => slopeAt(s, x) });
     } else if (s.kind === 'spring') {
       const red = new THREE.MeshStandardMaterial({ map: T.plank, color: 0xff6b6b, roughness: 0.4 });
       s.mesh = addBox(g, [red, red, springTop, red, red, red], (s.x0 + s.x1) / 2, s.y0 + 0.3, 0, s.x1 - s.x0, 0.6, 1.4);
+    } else if (s.kind === 'block') {                    // piedra sólida: se salta o se rodea
+      const w = s.x1 - s.x0, h = s.y1 - s.y0, cx = (s.x0 + s.x1) / 2;
+      const rockBlk = new THREE.MeshStandardMaterial({ map: tiled(T.rock, w / 2, h / 2), roughness: 0.9 });
+      const rk = new THREE.Mesh(UNIT_ROCK, rockBlk);
+      rk.position.set(cx, s.y0 + h * 0.5, 0); rk.scale.set(w * 0.52, h * 0.52, 0.95);
+      rk.rotation.set(0.2, 0.7, 0.1); rk.castShadow = true; rk.receiveShadow = true;
+      g.add(rk);
     } else if (s.kind === 'ceiling') {                  // saliente de roca sobre la pista
       extrudeZ(g, lensShape(s.x0, s.x1, s.base + 2.8, 1.2, 0.8), -1.4, 2.8, rockM);
       // Pilares de roca detrás de la pista (no bloquean el paso)
@@ -1062,6 +1194,10 @@ function buildVisuals(lv, zone) {
           const gl = buildGear(steelM), gr = buildGear(steelM);
           gl.position.set(s.base - s.amp - 2.7, s.y0 - 0.55, 0); gr.position.set(s.base + s.amp + 2.7, s.y0 - 0.55, 0);
           g.add(gl, gr); s.gears = [gl, gr];
+          for (const gx of [s.base - s.amp - 2.7, s.base + s.amp + 2.7]) {
+            const gy = laneY(S, gx);
+            if (gy > -1 && gy < s.y0 - 0.55) addBox(g, steelM, gx, (gy + s.y0 - 0.55) / 2, -1.2, 0.35, s.y0 - 0.55 - gy, 0.35);
+          }
           const topM = new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.55 });
           s.mesh = addBox(g, [steelM, steelM, topM, steelM, steelM, steelM], s.cx, (s.y0 + s.y1) / 2, 0, s.w, h, 2.4);
         } else {                                      // madera (verde) o balsa (acuática)
@@ -1073,18 +1209,12 @@ function buildVisuals(lv, zone) {
         const side = new THREE.MeshStandardMaterial({ map: tiled(T.plank, w / 3, h / 3), roughness: 0.65 });
         const top = new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.55 });
         addBox(g, [side, side, top, side, side, side], cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
-        for (const px of [s.x0 + 0.7, s.x1 - 0.7]) {
-          addBox(g, steelM, px, (s.y0 - 4) / 2, 0, 0.45, s.y0 + 4, 0.45);
-          sph(g, std(0x5b6670, 0.4, 0.8), px, s.y0 - 0.6, 0.25, 0.05);
-        }
+        if (!s.bridge) supportsUnder(s, steelM);
       } else {                                          // roca natural con hierba (verde) o arena (acuática)
         const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, w / 3, h / 3), roughness: 0.9 });
         const topM = kind === 'green' ? surfMat(T, T.grass, w, 2.6) : new THREE.MeshStandardMaterial({ map: tiled(T.platTop, w / 3, 1), roughness: 0.8 });
         addBox(g, [sideM, sideM, topM, sideM, sideM, sideM], cx, (s.y0 + s.y1) / 2, 0, w, h, 2.6);
-        // Base de roca que se funde con el paisaje
-        const stalk = new THREE.Mesh(UNIT_ROCK, rockM);
-        stalk.position.set(cx, s.y0 - 1.1, 0); stalk.scale.set(w * 0.42, 2.0, 1.6); stalk.castShadow = true;
-        g.add(stalk);
+        if (!s.bridge) supportsUnder(s, kind === 'green' ? std(0x7a5230, 0.8) : rockM);
         if (kind === 'green') grassSurfs.push({ x0: s.x0, x1: s.x1, z0: -1.1, z1: 1.1, y: () => s.y1 });
       }
       if (s.bridge) {                                   // puente con cuerdas o barandillas
@@ -1140,7 +1270,7 @@ function buildVisuals(lv, zone) {
     const wg = new THREE.PlaneGeometry(wx1 - wx0, wd, Math.ceil((wx1 - wx0) / 1.5), 40).rotateX(-Math.PI / 2);
     lv.water = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false,
-      uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Color(0x3fd0ff) }, uB: { value: new THREE.Color(0x0a5a9a) } },
+      uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Color(0x3fd0ff) }, uB: { value: new THREE.Color(0x0a5a9a) }, uNormal: { value: FILE_TEX.waternormal || T.blob } },
       vertexShader: `
         uniform float uTime; varying float vW; varying vec2 vXZ;
         void main() {
@@ -1150,12 +1280,14 @@ function buildVisuals(lv, zone) {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: `
-        uniform float uTime; uniform vec3 uA; uniform vec3 uB; varying float vW; varying vec2 vXZ;
+        uniform float uTime; uniform vec3 uA; uniform vec3 uB; uniform sampler2D uNormal; varying float vW; varying vec2 vXZ;
         void main() {
           vec3 c = mix(uB, uA, clamp(0.5 + vW * 2.0, 0.0, 1.0));
           c = mix(c, vec3(1.0), smoothstep(0.14, 0.2, vW) * 0.6);
           float sparkle = pow(0.5 + 0.5 * sin(vXZ.x * 7.0 + uTime * 3.0) * sin(vXZ.y * 9.0 - uTime * 2.0), 8.0);
           c += sparkle * 0.35;
+          vec3 nm = texture2D(uNormal, vXZ * 0.06 + vec2(uTime * 0.02, uTime * 0.015)).rgb * 2.0 - 1.0;
+          c += pow(max(dot(normalize(nm), normalize(vec3(0.25, 0.85, 0.35))), 0.0), 40.0) * 0.5;
           gl_FragColor = vec4(c, 0.8);
           #include <colorspace_fragment>
         }`,
@@ -1171,7 +1303,7 @@ function buildVisuals(lv, zone) {
    Jugador: erizo azul con púas, guantes, zapatillas y ojos
    ============================================================ */
 const player = {
-  x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1,
+  x: 0, y: 2, z: 0, vx: 0, vy: 0, rings: 0, facing: 1,
   grounded: false, groundSolid: null, jumping: false, spinAir: false,
   crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
 };
@@ -1458,6 +1590,7 @@ function stepWorld(dt) {
   }
 
   stepPlayer(dt);
+  p.z = laneZ(lv, p.x);
 
   // Enemigos
   for (const e of lv.enemies) {
@@ -1483,8 +1616,8 @@ function stepWorld(dt) {
   // Anillos
   for (const r of lv.rings) {
     if (r.taken) continue;
-    const dx = r.x - p.x, dy = r.y - p.y;
-    if (dx * dx + dy * dy < RING_R * RING_R) { r.taken = true; p.rings++; }
+    const dx = r.x - p.x, dy = r.y - p.y, dz = (r.z || 0) - p.z;
+    if (dx * dx + dy * dy + dz * dz < RING_R * RING_R) { r.taken = true; p.rings++; }
   }
   // Anillos dispersos (tras recibir daño): caen y se pueden recoger tras un instante
   for (let i = lv.scatter.length - 1; i >= 0; i--) {
@@ -1523,8 +1656,9 @@ function updateCamera(dt) {
   const ty = p.y + 1.2;
   cam.x += (tx - cam.x) * (1 - Math.exp(-dt * 5));
   cam.y += (ty - cam.y) * (1 - Math.exp(-dt * 3));
-  camera.position.set(cam.x, cam.y + 1.2, camDist);
-  camera.lookAt(cam.x, cam.y, 0);
+  cam.z += (p.z * 0.7 - cam.z) * (1 - Math.exp(-dt * 4));
+  camera.position.set(cam.x, cam.y + 1.2, camDist + cam.z);
+  camera.lookAt(cam.x, cam.y, cam.z);
   sky.position.copy(camera.position);
   // El sol y su zona de sombras siguen a la cámara
   sun.position.set(cam.x + 9, cam.y + 16, 22);
@@ -1539,7 +1673,7 @@ function updateVisuals(t, dt) {
 
   // Jugador. Escala visual 1.3; los pies quedan sobre la caja de colisión
   const VS = 1.3;
-  P.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, 0);
+  P.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, p.z);
   P.root.scale.set(p.facing * VS, VS, VS);
   P.root.visible = !(p.invT > 0 && Math.floor(t * 16) % 2 === 0);
   // Modo bola: al rodar o durante un salto con giro
@@ -1583,7 +1717,7 @@ function updateVisuals(t, dt) {
 
   // Anillos (giran; los recogidos se ocultan)
   lv.rings.forEach((r, i) => {
-    dummy.position.set(r.x, r.y, 0);
+    dummy.position.set(r.x, r.y, r.z || 0);
     dummy.rotation.set(0, t * 3 + i * 0.4, 0);
     dummy.scale.setScalar(r.taken ? 0 : 1);
     dummy.updateMatrix();
@@ -1725,8 +1859,14 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-loadLevel(0);          // el nivel 1 se ve de fondo en la pantalla de título
-requestAnimationFrame((t) => { last = t; frame(t); });
+// Texturas primero; luego el nivel 1 se ve de fondo en la pantalla de título
+const playBtn = $('btnPlay');
+playBtn.disabled = true; playBtn.textContent = 'CARGANDO…';
+loadFileTextures().then(() => {
+  loadLevel(0);
+  playBtn.disabled = false; playBtn.textContent = 'JUGAR';
+  requestAnimationFrame((t) => { last = t; frame(t); });
+});
 </script>
 </body>
 </html>
