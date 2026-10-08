@@ -1,2 +1,35 @@
 # HaikuSonic
-Juego similar a Sonic
+
+Juego de plataformas 2.5D estilo Sonic, hecho con Three.js en un único archivo (`index.html`).
+Funciona en el navegador del móvil Android: no hay instalación ni compilación.
+
+## Cómo jugarlo
+
+- **En el móvil**: sirve la carpeta con cualquier hosting estático (p. ej. GitHub Pages) y abre el enlace en Chrome. Juega en horizontal.
+- **En PC**: abre `index.html` con un servidor local (`python3 -m http.server`) y usa el teclado.
+
+## Controles
+
+| Acción | Táctil | Teclado |
+| --- | --- | --- |
+| Moverse | Joystick | ← → / A D |
+| Saltar | SALTAR | Espacio / ↑ / W / Z |
+| Spin dash | Mantén SPIN parado y suelta | Mantén X / Shift y suelta (con ↓ / S también) |
+| Rodar | Mantén abajo corriendo | ↓ / S |
+| Picado en el aire | SPIN en el aire | X / Shift en el aire |
+
+## Contenido
+
+- 3 zonas (Verde, Industrial, Acuática) × 3 actos = 9 niveles generados proceduralmente con semilla fija.
+- Anillos (instancing), muelles, plataformas de una cara, plataformas móviles, enemigos que se pisan o se destruyen rodando, postes de control y meta.
+- Cielo y agua con shaders propios; decoración con parallax de profundidad (eje Z).
+
+## Limitaciones actuales
+
+- Sin bucles, rampas ni raíles todavía.
+- Sin sonido.
+- Los escenarios son geometría procedural de Three.js; no se usan modelos de Blender.
+
+## Estructura
+
+- `index.html`: el juego completo (HTML, CSS y JavaScript). Three.js se carga desde jsDelivr (v0.160.0).

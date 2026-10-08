@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b1a2e">
+<meta name="description" content="HaikuSonic: plataformas 2.5D estilo Sonic en Three.js, con controles táctiles.">
+<title>HaikuSonic 2.5D</title>
+<style>
+  :root { --gold: #ffd23f; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #0b1a2e; color: #fff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* HUD */
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+    padding: calc(env(safe-area-inset-top) + 10px) 16px 0;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    font-weight: 800; text-shadow: 0 2px 4px rgba(0, 0, 0, .6);
+  }
+  #hud .stat { font-size: clamp(14px, 3.6vmin, 20px); line-height: 1.3; }
+  #hud .ring { color: var(--gold); }
+  #hud .zone { text-align: center; font-size: clamp(12px, 3vmin, 16px); opacity: .9; margin-top: 2px; }
+  #hud .right { text-align: right; }
+
+  /* Controles táctiles */
+  #controls { position: fixed; inset: 0; pointer-events: none; }
+  .pad {
+    position: absolute; border-radius: 50%; pointer-events: auto;
+    background: rgba(255, 255, 255, .14); border: 2px solid rgba(255, 255, 255, .35);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; letter-spacing: .05em; color: rgba(255, 255, 255, .9); text-shadow: 0 2px 4px rgba(0, 0, 0, .5);
+  }
+  .pad.on { background: rgba(255, 255, 255, .32); }
+  #joy { left: max(4vw, env(safe-area-inset-left)); bottom: max(5vh, env(safe-area-inset-bottom)); width: 34vmin; height: 34vmin; }
+  #knob {
+    position: absolute; left: 50%; top: 50%; width: 14vmin; height: 14vmin; margin: -7vmin 0 0 -7vmin;
+    border-radius: 50%; background: rgba(255, 255, 255, .5); pointer-events: none;
+  }
+  #jump {
+    right: max(4vw, env(safe-area-inset-right)); bottom: max(6vh, env(safe-area-inset-bottom));
+    width: 22vmin; height: 22vmin; background: rgba(255, 210, 63, .25);
+  }
+  #spin {
+    right: calc(max(4vw, env(safe-area-inset-right)) + 22vmin + 3vmin);
+    bottom: max(8vh, env(safe-area-inset-bottom)); width: 17vmin; height: 17vmin;
+  }
+  /* En escritorio se usa el teclado */
+  @media (hover: hover) and (pointer: fine) { #controls { display: none; } }
+
+  /* Pantallas */
+  .overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center; background: rgba(4, 10, 20, .6);
+  }
+  .overlay h1 { margin: 0; font-size: clamp(28px, 8vmin, 56px); color: var(--gold); text-shadow: 0 4px 0 #1b3a7a; font-style: italic; }
+  .overlay p { margin: 0; max-width: 520px; line-height: 1.45; opacity: .92; }
+  .overlay button {
+    font: inherit; font-weight: 900; font-size: clamp(18px, 5vmin, 26px); padding: 14px 40px;
+    border: 0; border-radius: 999px; background: var(--gold); color: #1b1b1b;
+    box-shadow: 0 6px 0 #b08a00; cursor: pointer;
+  }
+  .overlay button:active { transform: translateY(4px); box-shadow: 0 2px 0 #b08a00; }
+  .hidden { display: none !important; }
+  #rotate {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: #0b1a2e; text-align: center; padding: 24px; font-size: 18px;
+  }
+  @media (orientation: portrait) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="stat">
+    <div>ANILLOS <span id="rings" class="ring">0</span></div>
+    <div>VIDAS <span id="lives">3</span></div>
+  </div>
+  <div class="zone" id="zone"></div>
+  <div class="stat right">
+    <div id="time">0:00</div>
+    <div>PUNTOS <span id="score">0</span></div>
+  </div>
+</div>
+
+<div id="controls">
+  <div id="joy" class="pad"><div id="knob"></div></div>
+  <div id="spin" class="pad">SPIN</div>
+  <div id="jump" class="pad">SALTAR</div>
+</div>
+
+<div id="title" class="overlay">
+  <h1>HaikuSonic</h1>
+  <p>Plataformas 2.5D · 3 zonas × 3 actos</p>
+  <p>Joystick: moverse · SALTAR: saltar · SPIN: mantén para cargar y suelta para arrancar. Mantén abajo mientras corres para rodar. En el aire, SPIN te lanza hacia abajo.</p>
+  <button id="btnPlay">JUGAR</button>
+</div>
+
+<div id="clear" class="overlay hidden">
+  <h1>¡Acto completado!</h1>
+  <p id="clearText"></p>
+  <button id="btnNext">SIGUIENTE</button>
+</div>
+
+<div id="over" class="overlay hidden">
+  <h1>Game over</h1>
+  <p id="overText"></p>
+  <button id="btnRetry">REINTENTAR</button>
+</div>
+
+<div id="rotate"><div>Gira el móvil en horizontal para jugar</div></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   Constantes
+   ============================================================ */
+const STEP = 1 / 120;              // paso fijo de física (estable a cualquier FPS)
+const GRAVITY = 42;
+const PW = 0.8, PH = 1.0;          // caja de colisión del jugador
+const EPS = 0.01;
+const TOP_SPEED = 22, ACCEL = 16, FRICTION = 12, ROLL_FRICTION = 5;
+const JUMP_V = 15.5, SPRING_V = 26, MAX_FALL = 48;
+const DASH_MIN = 14, DASH_RANGE = 14;
+const ENEMY_R = 0.45, RING_R = 0.8, MAX_SCATTER = 60;
+const LEVELS = 9;                  // 3 zonas × 3 actos
+const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyW', 'KeyZ'];
+const SPIN_KEYS = ['KeyX', 'ShiftLeft', 'ShiftRight', 'KeyC'];
+const RIGHT_KEYS = ['ArrowRight', 'KeyD'], LEFT_KEYS = ['ArrowLeft', 'KeyA'], DOWN_KEYS = ['ArrowDown', 'KeyS'];
+
+const ZONES = [
+  { name: 'Zona Verde', decor: 'green', killY: -14, water: false,
+    skyTop: 0x5fbcff, skyBottom: 0xd9f3ff, fog: 0xbfe9ff,
+    grass: 0x46c04f, dirt: 0x8d5a2b, plat: 0xa0703a, accent: 0xffd24a, enemy: 0xe53935 },
+  { name: 'Zona Industrial', decor: 'industrial', killY: -14, water: false,
+    skyTop: 0x3b2f66, skyBottom: 0xd77a4a, fog: 0x5a4670,
+    grass: 0x9aa7ae, dirt: 0x4a5b66, plat: 0x627d8c, accent: 0xff9800, enemy: 0xd81b60 },
+  { name: 'Zona Acuática', decor: 'water', killY: -3.4, water: true,
+    skyTop: 0x3aa0e8, skyBottom: 0xc9f4ff, fog: 0x8fe0f2,
+    grass: 0xe8c77a, dirt: 0xa9824e, plat: 0x3fb3c7, accent: 0x00e5ff, enemy: 0xff7043 },
+];
+
+/* ============================================================
+   Utilidades
+   ============================================================ */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const approach = (v, target, maxDelta) => (v < target ? Math.min(v + maxDelta, target) : Math.max(v - maxDelta, target));
+const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+/* ============================================================
+   Geometría compartida (una sola vez para todo el juego)
+   ============================================================ */
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+const UNIT_SPHERE = new THREE.SphereGeometry(1, 20, 14);
+const UNIT_CYL = new THREE.CylinderGeometry(1, 1, 1, 14);
+const UNIT_CONE = new THREE.ConeGeometry(1, 1, 10);
+const UNIT_ROCK = new THREE.DodecahedronGeometry(1, 0);
+const RING_GEO = new THREE.TorusGeometry(0.34, 0.09, 8, 18);
+const SHARED_GEO = new Set([UNIT_BOX, UNIT_SPHERE, UNIT_CYL, UNIT_CONE, UNIT_ROCK, RING_GEO]);
+
+function addBox(parent, mat, x, y, z, sx, sy, sz) {
+  const m = new THREE.Mesh(UNIT_BOX, mat);
+  m.position.set(x, y, z); m.scale.set(sx, sy, sz);
+  parent.add(m); return m;
+}
+function addSphere(parent, mat, x, y, z, r) {
+  const m = new THREE.Mesh(UNIT_SPHERE, mat);
+  m.position.set(x, y, z); m.scale.setScalar(r);
+  parent.add(m); return m;
+}
+function addCyl(parent, mat, x, y, z, r, len, alongX = false) {
+  const m = new THREE.Mesh(UNIT_CYL, mat);
+  m.position.set(x, y, z); m.scale.set(r, len, r);
+  if (alongX) m.rotation.z = Math.PI / 2;
+  parent.add(m); return m;
+}
+
+/* ============================================================
+   Renderer, escena, cámara
+   ============================================================ */
+const canvas = document.getElementById('game');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setSize(window.innerWidth, window.innerHeight, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xbfe9ff, 60, 220);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 400);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.3);
+sun.position.set(-6, 14, 20);
+scene.add(sun);
+
+// Cielo con degradado en shader (sigue a la cámara)
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false,
+  uniforms: { uTop: { value: new THREE.Color() }, uBottom: { value: new THREE.Color() } },
+  vertexShader: `
+    varying vec3 vDir;
+    void main() {
+      vDir = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform vec3 uTop; uniform vec3 uBottom; varying vec3 vDir;
+    void main() {
+      float h = clamp(vDir.y * 0.8 + 0.25, 0.0, 1.0);
+      gl_FragColor = vec4(mix(uBottom, uTop, h), 1.0);
+      #include <colorspace_fragment>
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(200, 24, 16), skyMat);
+sky.renderOrder = -1;
+scene.add(sky);
+
+let camDist = 16;
+const cam = { x: 0, y: 2 };
+function fitCamera() {
+  // Garantiza ~22 unidades de ancho visible, también en pantallas estrechas
+  const aspect = window.innerWidth / window.innerHeight;
+  const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  camDist = Math.max(7.5 / tanH, 11 / (tanH * aspect), 12);
+}
+function onResize() {
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  fitCamera();
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+/* ============================================================
+   Entrada: teclado + joystick y botones táctiles
+   ============================================================ */
+const keys = new Set();
+const input = { x: 0, y: 0, touchJump: false, touchSpin: false, jumpPressed: false, spinPressed: false };
+const isJumpHeld = () => input.touchJump || JUMP_KEYS.some((k) => keys.has(k));
+const isSpinHeld = () => input.touchSpin || SPIN_KEYS.some((k) => keys.has(k));
+const readAxisX = () => {
+  if (Math.abs(input.x) > 0.12) return input.x;
+  return (RIGHT_KEYS.some((k) => keys.has(k)) ? 1 : 0) - (LEFT_KEYS.some((k) => keys.has(k)) ? 1 : 0);
+};
+const readDown = () => input.y > 0.55 || isSpinHeld() || DOWN_KEYS.some((k) => keys.has(k));
+
+window.addEventListener('keydown', (e) => {
+  if ([...JUMP_KEYS, ...SPIN_KEYS, ...RIGHT_KEYS, ...LEFT_KEYS, ...DOWN_KEYS].includes(e.code)) e.preventDefault();
+  if (!e.repeat) {
+    if (JUMP_KEYS.includes(e.code)) input.jumpPressed = true;
+    if (SPIN_KEYS.includes(e.code)) input.spinPressed = true;
+  }
+  keys.add(e.code);
+});
+window.addEventListener('keyup', (e) => keys.delete(e.code));
+
+const joy = document.getElementById('joy');
+const knob = document.getElementById('knob');
+let joyPointer = null;
+function joyMove(e) {
+  const r = joy.getBoundingClientRect();
+  const max = r.width / 2 * 0.6;
+  let dx = e.clientX - (r.left + r.width / 2);
+  let dy = e.clientY - (r.top + r.height / 2);
+  const len = Math.hypot(dx, dy);
+  if (len > max) { dx = dx / len * max; dy = dy / len * max; }
+  knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  input.x = dx / max;
+  input.y = dy / max;   // positivo = abajo
+}
+function joyEnd(e) {
+  if (e.pointerId !== joyPointer) return;
+  joyPointer = null; input.x = 0; input.y = 0;
+  knob.style.transform = 'translate(0px, 0px)';
+}
+joy.addEventListener('pointerdown', (e) => { e.preventDefault(); joyPointer = e.pointerId; joy.setPointerCapture(e.pointerId); joyMove(e); });
+joy.addEventListener('pointermove', (e) => { if (e.pointerId === joyPointer) joyMove(e); });
+joy.addEventListener('pointerup', joyEnd);
+joy.addEventListener('pointercancel', joyEnd);
+
+function bindHold(el, onDown, onUp) {
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); onDown(); el.classList.add('on'); });
+  const end = () => { onUp(); el.classList.remove('on'); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('lostpointercapture', end);
+}
+bindHold(document.getElementById('jump'), () => { input.touchJump = true; input.jumpPressed = true; }, () => { input.touchJump = false; });
+bindHold(document.getElementById('spin'), () => { input.touchSpin = true; input.spinPressed = true; }, () => { input.touchSpin = false; });
+
+/* ============================================================
+   Generación procedural de niveles (semilla fija por nivel)
+   Sólidos: 'ground' y 'spring' bloquean por los lados;
+            'platform' (y móviles) son plataformas de una sola cara.
+   ============================================================ */
+function buildLevel(n) {
+  const zoneIdx = Math.floor(n / 3);
+  const act = n % 3;
+  const rng = mulberry32(1337 + n * 9973);
+  const rnd = (a, b) => a + (b - a) * rng();
+  const length = 160 + act * 40 + zoneIdx * 20;
+  const lv = {
+    n, zoneIdx, act, length, goalX: length, killY: ZONES[zoneIdx].killY,
+    t: 0, solids: [], enemies: [], rings: [], scatter: [], checkpoints: [],
+  };
+
+  const ground = (x0, x1) => lv.solids.push({ kind: 'ground', x0, x1, y0: -4, y1: 0 });
+  const ringArc = (cx, cy, span, count) => {
+    for (let i = 0; i < count; i++) {
+      const t = count === 1 ? 0.5 : i / (count - 1);
+      lv.rings.push({ x: cx - span / 2 + span * t, y: cy + Math.sin(t * Math.PI) * 0.9, taken: false });
+    }
+  };
+  const mover = (base, y) => lv.solids.push({
+    kind: 'platform', mover: true, base, amp: rnd(2, 4), speed: rnd(0.6, 1.1), ph: rng() * 6,
+    w: 3.2, cx: base, prevCx: base, x0: base - 1.6, x1: base + 1.6, y0: y - 0.5, y1: y,
+  });
+
+  ground(-10, 12);
+  let x = 12, nextCp = 45;
+  while (x < length) {
+    const seg = rnd(7, 14);
+    const x0 = x, x1 = x + seg;
+    ground(x0, x1);
+
+    if (x1 > nextCp) { lv.checkpoints.push({ x: x0 + 1.5, hit: false }); nextCp = x1 + 45; }
+    if (seg > 8 && rng() < 0.55) {
+      lv.enemies.push({ x: rnd(x0 + 3, x1 - 3), minX: x0 + 1, maxX: x1 - 1, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6 });
+    }
+    if (rng() < 0.6) ringArc(rnd(x0 + 2, x1 - 5), 1.2, 4.5, 5);
+    if (rng() < 0.2) {
+      const sx = rnd(x0 + 2, x1 - 3);
+      lv.solids.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0: 0, y1: 0.6, power: SPRING_V, squash: 0 });
+    }
+
+    x = x1;
+    if (x >= length) break;
+
+    if (rng() < 0.65) {                       // hueco
+      const gap = rnd(2.8, 4.4);
+      if (rng() < 0.7) {                      // plataforma sobre el hueco
+        const py = rnd(1.4, 2.0);
+        lv.solids.push({ kind: 'platform', x0: x1 - 0.8, x1: x1 + gap + 0.8, y0: py - 0.5, y1: py });
+        ringArc(x1 + gap / 2, py + 1.2, gap, 4);
+      }
+      x += gap;
+    }
+    if (rng() < 0.35) {                       // plataforma alta, con muelle en el suelo
+      const px = x + rnd(1.5, 3.5), pw = rnd(3, 5), py = rnd(3.4, 4.2);
+      lv.solids.push({ kind: 'platform', x0: px, x1: px + pw, y0: py - 0.5, y1: py });
+      ringArc(px + pw / 2, py + 1.1, pw, 5);
+      lv.solids.push({ kind: 'spring', x0: px + 0.2, x1: px + 1.4, y0: 0, y1: 0.6, power: SPRING_V, squash: 0 });
+    }
+    if (rng() < 0.3) mover(x + rnd(2, 6), rnd(1.6, 2.4));
+  }
+  if (x < length + 20) ground(x, length + 20);   // suelo hasta después de la meta
+  return lv;
+}
+
+/* ============================================================
+   Visuales de nivel (materiales por zona, instancing para anillos)
+   ============================================================ */
+function buildVisuals(lv, zone) {
+  const g = new THREE.Group();
+  const M = {
+    dirt: new THREE.MeshStandardMaterial({ color: zone.dirt, roughness: 0.95 }),
+    grass: new THREE.MeshStandardMaterial({ color: zone.grass, roughness: 0.8 }),
+    plat: new THREE.MeshStandardMaterial({ color: zone.plat, roughness: 0.6 }),
+    accent: new THREE.MeshStandardMaterial({ color: zone.accent, emissive: zone.accent, emissiveIntensity: 0.35 }),
+    spring: new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.5 }),
+    ring: new THREE.MeshStandardMaterial({ color: 0xffd23f, metalness: 0.7, roughness: 0.2, emissive: 0x3a2a00 }),
+    enemy: new THREE.MeshStandardMaterial({ color: zone.enemy, roughness: 0.5 }),
+    white: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+    black: new THREE.MeshStandardMaterial({ color: 0x111111 }),
+    post: new THREE.MeshStandardMaterial({ color: 0x9e9e9e, metalness: 0.5, roughness: 0.4 }),
+  };
+
+  // Sólidos
+  for (const s of lv.solids) {
+    const cx = (s.x0 + s.x1) / 2, w = s.x1 - s.x0;
+    if (s.kind === 'ground') {
+      addBox(g, M.dirt, cx, -2, 0, w, 4, 4);
+      addBox(g, M.grass, cx, -0.25, 0, w, 0.5, 4.4);
+    } else if (s.kind === 'spring') {
+      s.mesh = addBox(g, M.spring, cx, 0.3, 0, w, 0.6, 1.4);
+    } else if (s.mover) {
+      s.mesh = addBox(g, M.accent, s.cx, (s.y0 + s.y1) / 2, 0, s.w, s.y1 - s.y0, 2.4);
+    } else {
+      addBox(g, M.plat, cx, (s.y0 + s.y1) / 2, 0, w, s.y1 - s.y0, 2.4);
+    }
+  }
+
+  // Anillos: InstancedMesh (una llamada de dibujo para todos)
+  lv.ringMesh = new THREE.InstancedMesh(RING_GEO, M.ring, Math.max(1, lv.rings.length));
+  lv.ringMesh.count = lv.rings.length;
+  lv.ringMesh.frustumCulled = false;
+  g.add(lv.ringMesh);
+  lv.scatterMesh = new THREE.InstancedMesh(RING_GEO, M.ring, MAX_SCATTER);
+  lv.scatterMesh.count = 0;
+  lv.scatterMesh.frustumCulled = false;
+  g.add(lv.scatterMesh);
+
+  // Enemigos
+  for (const e of lv.enemies) {
+    const eg = new THREE.Group();
+    addSphere(eg, M.enemy, 0, 0, 0, ENEMY_R);
+    addSphere(eg, M.white, 0.16, 0.1, 0.36, 0.14);
+    addSphere(eg, M.black, 0.2, 0.1, 0.46, 0.07);
+    eg.position.set(e.x, ENEMY_R, 0);
+    g.add(eg);
+    e.mesh = eg;
+  }
+
+  // Postes de control y meta
+  for (const c of lv.checkpoints) {
+    addBox(g, M.post, c.x, 1.1, 0, 0.12, 2.2, 0.12);
+    c.mat = new THREE.MeshStandardMaterial({ color: 0x9e9e9e, emissive: 0x000000 });
+    c.orb = addSphere(g, c.mat, c.x, 2.35, 0, 0.22);
+  }
+  addBox(g, M.post, lv.goalX, 3.5, 0, 0.3, 7, 0.3);
+  lv.goalOrb = addSphere(g, M.accent, lv.goalX, 7.2, 0, 0.5);
+
+  addDecor(g, lv, zone);
+
+  // Agua (zona acuática): shader con olas animadas
+  if (zone.water) {
+    const wg = new THREE.PlaneGeometry(lv.length + 200, 20, 160, 3).rotateX(-Math.PI / 2);
+    lv.water = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Color(0x3fd0ff) }, uB: { value: new THREE.Color(0x0a5a9a) } },
+      vertexShader: `
+        uniform float uTime; varying float vW; varying vec2 vXZ;
+        void main() {
+          vec3 p = position;
+          float w = sin(p.x * 0.45 + uTime * 1.4) * 0.12 + sin(p.z * 0.9 - uTime * 1.9) * 0.07;
+          p.y += w; vW = w; vXZ = p.xz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+        }`,
+      fragmentShader: `
+        uniform float uTime; uniform vec3 uA; uniform vec3 uB; varying float vW; varying vec2 vXZ;
+        void main() {
+          vec3 c = mix(uB, uA, clamp(0.5 + vW * 2.0, 0.0, 1.0));
+          c = mix(c, vec3(1.0), smoothstep(0.14, 0.2, vW) * 0.6);
+          c += (0.5 + 0.5 * sin(vXZ.x * 3.0 + uTime * 3.0)) * 0.05;
+          gl_FragColor = vec4(c, 0.82);
+          #include <colorspace_fragment>
+        }`,
+    });
+    const water = new THREE.Mesh(wg, lv.water);
+    water.position.set(lv.length / 2 - 20, -2.2, -9);
+    g.add(water);
+  }
+  return g;
+}
+
+function addDecor(g, lv, zone) {
+  const rnd = mulberry32(lv.n * 31 + 7);
+  const end = lv.length + 60;
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 });
+
+  if (zone.decor === 'green') {
+    const hills = [mat(0x2e7d32), mat(0x3f9a44)];
+    for (let x = -20; x < end; x += 16) {
+      const h = addSphere(g, hills[Math.floor(rnd() * 2)], x + rnd() * 6, -3, -32 - rnd() * 8, 8 + rnd() * 8);
+      h.scale.y *= 0.6;
+    }
+    const trunk = mat(0x6d4c41), leaves = mat(0x43a047);
+    for (let x = -10; x < end; x += 13) {
+      addBox(g, trunk, x, 1.5, -9, 0.5, 3, 0.5);
+      addSphere(g, leaves, x, 3.6, -9, 1.6);
+    }
+  } else if (zone.decor === 'industrial') {
+    const factory = mat(0x37474f), pipe = mat(0x78909c);
+    const glow = new THREE.MeshStandardMaterial({ color: 0xffb74d, emissive: 0xff9800, emissiveIntensity: 0.9 });
+    for (let x = -10; x < end; x += 22) {
+      const h = 10 + rnd() * 14;
+      addBox(g, factory, x, h / 2, -30 - rnd() * 6, 7 + rnd() * 5, h, 6);
+      addBox(g, glow, x, h * 0.6, -26.9, 0.8, 0.8, 0.1);
+    }
+    for (let x = -10; x < end; x += 40) addCyl(g, pipe, x + 20, 4, -11, 0.4, 40, true);
+  } else {
+    const rock = mat(0x8d6e63), sand = mat(0xd7b77a);
+    for (let x = -10; x < end; x += 18) {
+      const r = new THREE.Mesh(UNIT_ROCK, rock);
+      r.position.set(x, -1, -24);
+      r.scale.setScalar(2 + rnd() * 2);
+      g.add(r);
+    }
+    for (let x = -6; x < end; x += 15) {
+      const h = 4 + rnd() * 5;
+      addCyl(g, sand, x, -2 + h / 2, -12, 0.8, h);
+    }
+  }
+}
+
+/* ============================================================
+   Jugador: erizo azul con púas, zapatos y ojos
+   ============================================================ */
+const player = {
+  x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1,
+  grounded: false, groundSolid: null, jumping: false,
+  crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
+};
+const playerMesh = new THREE.Group();
+const faceParts = new THREE.Group();
+{
+  const blue = new THREE.MeshStandardMaterial({ color: 0x1565e0, roughness: 0.4 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x0b3d91, roughness: 0.5 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const black = new THREE.MeshStandardMaterial({ color: 0x111111 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xe53935, roughness: 0.5 });
+  addSphere(playerMesh, blue, 0, 0, 0, 0.5);
+  playerMesh.add(faceParts);
+  for (const a of [0.7, 1.2, 1.7]) {          // tres púas hacia atrás
+    const dx = -Math.sin(a) * 0.5, dy = Math.cos(a) * 0.5;
+    const cone = new THREE.Mesh(UNIT_CONE, dark);
+    cone.position.set(dx, dy, 0); cone.scale.set(0.16, 0.7, 0.16); cone.rotation.z = a;
+    faceParts.add(cone);
+  }
+  addSphere(faceParts, white, 0.18, 0.12, 0.38, 0.17);
+  addSphere(faceParts, black, 0.24, 0.12, 0.47, 0.08);
+  addBox(faceParts, red, 0.12, -0.44, 0.14, 0.3, 0.16, 0.34);
+  addBox(faceParts, red, -0.12, -0.44, 0.14, 0.3, 0.16, 0.34);
+  scene.add(playerMesh);
+}
+
+/* ============================================================
+   Física: sólidos AABB, eje X y eje Y por separado
+   ============================================================ */
+function resolveX(p, solids) {
+  const top = p.y + PH / 2, bottom = p.y - PH / 2;
+  const left = p.x - PW / 2, right = p.x + PW / 2;
+  for (const s of solids) {
+    if (s.kind === 'platform') continue;                // una cara: no bloquea lateralmente
+    if (top <= s.y0 + EPS || bottom >= s.y1 - EPS) continue;
+    if (right <= s.x0 || left >= s.x1) continue;
+    const pushLeft = right - s.x0, pushRight = s.x1 - left;
+    p.x = pushLeft < pushRight ? s.x0 - PW / 2 : s.x1 + PW / 2;
+    p.vx = 0; p.dashT = 0; p.charge = 0;
+  }
+}
+
+function resolveY(p, solids, prevBottom) {
+  p.grounded = false; p.groundSolid = null;
+  const left = p.x - PW / 2, right = p.x + PW / 2;
+  for (const s of solids) {
+    if (right <= s.x0 || left >= s.x1) continue;
+    const bottom = p.y - PH / 2;
+    // Aterriza sólo si los pies estaban por encima de la superficie en el paso anterior
+    if (p.vy <= 0 && prevBottom >= s.y1 - 0.02 && bottom < s.y1) {
+      p.y = s.y1 + PH / 2;
+      p.vy = 0; p.grounded = true; p.groundSolid = s;
+      if (s.kind === 'spring') {
+        p.vy = s.power; p.grounded = false; p.groundSolid = null; p.jumping = false;
+        s.squash = 0.15;
+      }
+    }
+  }
+}
+
+function stepPlayer(dt) {
+  const p = player, lv = currentLevel;
+  const ax = readAxisX();
+  const down = readDown();
+  p.invT = Math.max(0, p.invT - dt);
+  p.dashT = Math.max(0, p.dashT - dt);
+
+  // Salto (altura variable: soltar pronto corta el salto)
+  if (input.jumpPressed) {
+    input.jumpPressed = false;
+    if (p.grounded) { p.vy = JUMP_V; p.grounded = false; p.groundSolid = null; p.jumping = true; p.crouch = false; }
+  }
+  if (p.jumping && p.vy > 0 && !isJumpHeld()) { p.vy *= 0.5; p.jumping = false; }
+
+  // SPIN en el aire = picado
+  if (input.spinPressed) {
+    input.spinPressed = false;
+    if (!p.grounded) p.vy = Math.min(p.vy, -20);
+  }
+
+  // Spin dash: cargar parado y soltar
+  if (p.grounded) {
+    if (down && Math.abs(p.vx) < 1.5) { p.crouch = true; p.charge = Math.min(1, p.charge + dt); }
+    else if (p.crouch && !down) {
+      p.crouch = false;
+      if (p.charge > 0.05) { p.vx = p.facing * (DASH_MIN + DASH_RANGE * p.charge); p.dashT = 0.5; }
+      p.charge = 0;
+    }
+  } else { p.crouch = false; p.charge = 0; }
+
+  if (!p.crouch && Math.abs(ax) > 0.1) p.facing = ax > 0 ? 1 : -1;
+  p.rolling = p.grounded && (p.dashT > 0 || (down && Math.abs(p.vx) > 4));
+  if (p.rolling) p.roll += p.vx * dt / 0.5;
+
+  // Velocidad horizontal con momentum
+  if (p.grounded) {
+    if (p.crouch) p.vx = approach(p.vx, 0, 30 * dt);
+    else if (Math.abs(ax) > 0.1) {
+      const reversing = Math.sign(ax) !== Math.sign(p.vx) && Math.abs(p.vx) > 1;
+      p.vx = approach(p.vx, ax * TOP_SPEED, (reversing ? ACCEL * 2.5 : ACCEL) * dt);
+    } else {
+      p.vx = approach(p.vx, 0, (p.rolling ? ROLL_FRICTION : FRICTION) * dt);
+    }
+  } else if (Math.abs(ax) > 0.1) {
+    p.vx = approach(p.vx, ax * TOP_SPEED, 9 * dt);
+  }
+
+  // Gravedad (en suelo mantiene vy ligeramente negativa para detectar apoyo)
+  if (p.grounded) p.vy = -GRAVITY * dt;
+  else p.vy = Math.max(p.vy - GRAVITY * dt, -MAX_FALL);
+
+  p.x += p.vx * dt;
+  resolveX(p, lv.solids);
+  const prevBottom = p.y - PH / 2;
+  p.y += p.vy * dt;
+  resolveY(p, lv.solids, prevBottom);
+}
+
+/* ============================================================
+   Mundo: un paso fijo (movers, jugador, enemigos, anillos, reglas)
+   ============================================================ */
+let currentLevel = null;
+let levelGroup = null;
+let zone = ZONES[0];
+let mode = 'title';         // title | play | clear | over
+let levelIndex = 0;
+let lives = 3;
+let score = 0;
+let levelTime = 0;
+let accumulator = 0;
+let checkpoint = { x: 0, y: 2 };
+
+function hurt() {
+  const p = player;
+  if (p.invT > 0) return;
+  if (p.rings > 0) {
+    const n = Math.min(p.rings, 20);
+    for (let i = 0; i < n && currentLevel.scatter.length < MAX_SCATTER; i++) {
+      const dir = i % 2 ? 1 : -1;
+      currentLevel.scatter.push({
+        x: p.x, y: p.y, vx: dir * (1 + Math.random() * 4), vy: 5 + Math.random() * 5, life: 4,
+      });
+    }
+    p.rings = 0;
+    p.vx = -p.facing * 6; p.vy = 8; p.grounded = false; p.groundSolid = null;
+    p.invT = 2; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0;
+  } else {
+    die();
+  }
+}
+
+function die() {
+  lives--;
+  if (lives <= 0) { gameOver(); return; }
+  const p = player;
+  p.x = checkpoint.x; p.y = checkpoint.y + 1;
+  p.vx = 0; p.vy = 0; p.rings = 0; p.invT = 1.5;
+  p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0;
+}
+
+function stepWorld(dt) {
+  const lv = currentLevel, p = player;
+  lv.t += dt;
+
+  // Plataformas móviles (y el jugador que va encima)
+  for (const s of lv.solids) {
+    if (!s.mover) continue;
+    s.prevCx = s.cx;
+    s.cx = s.base + Math.sin(lv.t * s.speed + s.ph) * s.amp;
+    s.x0 = s.cx - s.w / 2; s.x1 = s.cx + s.w / 2;
+    if (p.groundSolid === s) p.x += s.cx - s.prevCx;
+  }
+
+  stepPlayer(dt);
+
+  // Enemigos
+  for (const e of lv.enemies) {
+    if (!e.alive) continue;
+    e.x += e.dir * 2.2 * dt;
+    if (e.x < e.minX) { e.x = e.minX; e.dir = 1; }
+    if (e.x > e.maxX) { e.x = e.maxX; e.dir = -1; }
+    const dx = e.x - p.x, dy = ENEMY_R - p.y;
+    if (dx * dx + dy * dy < (ENEMY_R + 0.4) ** 2) {
+      if (p.rolling || p.dashT > 0) {              // rodando: destruye
+        e.alive = false; score += 100;
+      } else if (p.vy < 0 && p.y - PH / 2 > ENEMY_R) { // pisotón
+        e.alive = false; score += 100;
+        p.vy = 10; p.grounded = false; p.groundSolid = null;
+      } else {
+        hurt();
+        if (mode !== 'play') return;
+      }
+    }
+  }
+
+  // Anillos
+  for (const r of lv.rings) {
+    if (r.taken) continue;
+    const dx = r.x - p.x, dy = r.y - p.y;
+    if (dx * dx + dy * dy < RING_R * RING_R) { r.taken = true; p.rings++; }
+  }
+  // Anillos dispersos (tras recibir daño): caen y se pueden recoger tras un instante
+  for (let i = lv.scatter.length - 1; i >= 0; i--) {
+    const r = lv.scatter[i];
+    r.life -= dt; r.vy -= GRAVITY * 0.5 * dt;
+    r.x += r.vx * dt; r.y += r.vy * dt;
+    if (r.life <= 0 || r.y < lv.killY) { lv.scatter.splice(i, 1); continue; }
+    if (r.life < 3.4) {
+      const dx = r.x - p.x, dy = r.y - p.y;
+      if (dx * dx + dy * dy < RING_R * RING_R) { lv.scatter.splice(i, 1); p.rings++; }
+    }
+  }
+
+  // Puntos de control
+  for (const c of lv.checkpoints) {
+    if (!c.hit && p.x > c.x) {
+      c.hit = true;
+      checkpoint = { x: c.x, y: 1.2 };
+      c.mat.color.setHex(zone.accent); c.mat.emissive.setHex(zone.accent);
+    }
+  }
+
+  // Caída al vacío
+  if (p.y < lv.killY) { die(); if (mode !== 'play') return; }
+
+  // Meta
+  if (p.x >= lv.goalX) completeLevel();
+}
+
+/* ============================================================
+   Cámara, cielo y render visual
+   ============================================================ */
+function updateCamera(dt) {
+  const p = player;
+  const tx = p.x + THREE.MathUtils.clamp(p.vx * 0.15, -4, 4);
+  const ty = p.y + 1.2;
+  cam.x += (tx - cam.x) * (1 - Math.exp(-dt * 5));
+  cam.y += (ty - cam.y) * (1 - Math.exp(-dt * 3));
+  camera.position.set(cam.x, cam.y + 1.2, camDist);
+  camera.lookAt(cam.x, cam.y, 0);
+  sky.position.copy(camera.position);
+}
+
+const dummy = new THREE.Object3D();
+function updateVisuals(t, dt) {
+  const lv = currentLevel, p = player;
+  if (!lv) return;
+
+  // Jugador
+  playerMesh.position.set(p.x, p.y, 0);
+  playerMesh.scale.set(p.facing, 1, 1);
+  playerMesh.rotation.z = p.rolling ? -p.roll : 0;
+  faceParts.visible = !p.rolling;
+  playerMesh.visible = !(p.invT > 0 && Math.floor(t * 16) % 2 === 0);
+
+  // Plataformas, muelles, enemigos
+  for (const s of lv.solids) {
+    if (s.mover) s.mesh.position.x = s.cx;
+    if (s.kind === 'spring' && s.mesh) {
+      s.squash = Math.max(0, s.squash - dt);
+      const k = s.squash > 0 ? 0.6 : 1;
+      s.mesh.scale.y = 0.6 * k;
+      s.mesh.position.y = 0.3 * k;
+    }
+  }
+  for (const e of lv.enemies) {
+    e.mesh.visible = e.alive;
+    e.mesh.position.x = e.x;
+    e.mesh.position.y = ENEMY_R + Math.abs(Math.sin(t * 6 + e.phase)) * 0.08;
+  }
+
+  // Anillos (giran; los recogidos se ocultan)
+  lv.rings.forEach((r, i) => {
+    dummy.position.set(r.x, r.y, 0);
+    dummy.rotation.set(0, t * 3 + i * 0.4, 0);
+    dummy.scale.setScalar(r.taken ? 0 : 1);
+    dummy.updateMatrix();
+    lv.ringMesh.setMatrixAt(i, dummy.matrix);
+  });
+  lv.ringMesh.instanceMatrix.needsUpdate = true;
+
+  lv.scatter.forEach((r, i) => {
+    dummy.position.set(r.x, r.y, 0);
+    dummy.rotation.set(0, t * 3 + i, 0);
+    dummy.scale.setScalar(1);
+    dummy.updateMatrix();
+    lv.scatterMesh.setMatrixAt(i, dummy.matrix);
+  });
+  lv.scatterMesh.count = lv.scatter.length;
+  lv.scatterMesh.instanceMatrix.needsUpdate = true;
+
+  lv.goalOrb.rotation.y = t * 2;
+  if (lv.water) lv.water.uniforms.uTime.value = t;
+
+  updateCamera(dt);
+}
+
+/* ============================================================
+   Flujo de juego: carga de nivel, meta, game over
+   ============================================================ */
+function loadLevel(n) {
+  if (levelGroup) {
+    scene.remove(levelGroup);
+    levelGroup.traverse((o) => {
+      if (o.material) o.material.dispose();
+      if (o.geometry && !SHARED_GEO.has(o.geometry)) o.geometry.dispose();
+    });
+  }
+  levelIndex = n;
+  currentLevel = buildLevel(n);
+  zone = ZONES[currentLevel.zoneIdx];
+  levelGroup = buildVisuals(currentLevel, zone);
+  scene.add(levelGroup);
+  skyMat.uniforms.uTop.value.setHex(zone.skyTop);
+  skyMat.uniforms.uBottom.value.setHex(zone.skyBottom);
+  scene.fog.color.setHex(zone.fog);
+
+  Object.assign(player, {
+    x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1, grounded: false, groundSolid: null,
+    jumping: false, crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
+  });
+  checkpoint = { x: 0, y: 2 };
+  cam.x = player.x; cam.y = player.y;
+  accumulator = 0; levelTime = 0;
+  input.jumpPressed = false; input.spinPressed = false;
+  document.getElementById('zone').textContent = `${zone.name} · Acto ${currentLevel.act + 1}`;
+}
+
+const $ = (id) => document.getElementById(id);
+function show(id, on) { $(id).classList.toggle('hidden', !on); }
+
+function completeLevel() {
+  mode = 'clear';
+  const bonus = Math.max(0, 300 - Math.floor(levelTime)) * 10;
+  score += player.rings * 10 + bonus;
+  $('clearText').textContent = `Anillos: ${player.rings} · Tiempo: ${fmtTime(levelTime)} · Bonus: ${bonus}`;
+  $('btnNext').textContent = levelIndex < LEVELS - 1 ? 'SIGUIENTE' : 'JUGAR DE NUEVO';
+  show('clear', true);
+}
+
+function gameOver() {
+  mode = 'over';
+  $('overText').textContent = `Puntuación: ${score}`;
+  show('over', true);
+}
+
+function startGame() {
+  lives = 3; score = 0;
+  loadLevel(0);
+  mode = 'play';
+  show('title', false); show('clear', false); show('over', false);
+}
+
+async function tryFullscreen() {
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    await screen.orientation?.lock?.('landscape');
+  } catch (e) { /* no soportado: se ignora */ }
+}
+
+$('btnPlay').addEventListener('click', () => { tryFullscreen(); startGame(); });
+$('btnNext').addEventListener('click', () => {
+  show('clear', false);
+  if (levelIndex < LEVELS - 1) { loadLevel(levelIndex + 1); mode = 'play'; }
+  else startGame();
+});
+$('btnRetry').addEventListener('click', () => {
+  show('over', false);
+  lives = 3; loadLevel(levelIndex); mode = 'play';
+});
+
+/* ============================================================
+   Bucle principal
+   ============================================================ */
+const hud = {
+  rings: $('rings'), lives: $('lives'), time: $('time'), score: $('score'),
+};
+function updateHud() {
+  const r = String(player.rings), l = String(lives), t = fmtTime(levelTime), s = String(score + player.rings * 10);
+  if (hud.rings.textContent !== r) hud.rings.textContent = r;
+  if (hud.lives.textContent !== l) hud.lives.textContent = l;
+  if (hud.time.textContent !== t) hud.time.textContent = t;
+  if (hud.score.textContent !== s) hud.score.textContent = s;
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (mode === 'play') {
+    accumulator += dt;
+    levelTime += dt;
+    while (accumulator >= STEP && mode === 'play') {
+      stepWorld(STEP);
+      accumulator -= STEP;
+    }
+  }
+  updateVisuals(now / 1000, dt);
+  renderer.render(scene, camera);
+  updateHud();
+  requestAnimationFrame(frame);
+}
+
+loadLevel(0);          // el nivel 1 se ve de fondo en la pantalla de título
+requestAnimationFrame((t) => { last = t; frame(t); });
+</script>
+</body>
+</html>
