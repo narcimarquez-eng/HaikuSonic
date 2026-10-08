@@ -23,7 +23,7 @@ export function buildWorld(lv, zi, ai, scene) {
     return g;
   };
   buildLane(lv, zi, T, chunkOf);
-  for (const pt of lv.paths) buildTube(pt, T, chunkOf(pt.x0));
+  for (const pt of lv.paths) buildTube(pt, T, chunkOf(pt.x0), zi);
   const bd = buildBackdrop(lv, zi, ai, T, chunkOf, root);
   const ent = buildEntities(lv, zi, chunkOf, root);
   return { scene, root, chunks, bd, ent };

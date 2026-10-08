@@ -1,6 +1,6 @@
 // Fondo: terreno que continúa la pista, montañas con crestas y nieve, decoración por zona y acto, nubes y agua
 import * as THREE from 'three';
-import { CHUNK, ROCK_GEO, UNIT_BOX, UNIT_CONE, UNIT_CYL, UNIT_SPHERE, extrudeZ, instanced, lensShape } from './geo.js';
+import { CHUNK, LUMP_GEO, ROCK_GEO, UNIT_BOX, UNIT_CONE, UNIT_CYL, UNIT_SPHERE, extrudeZ, instanced, lensShape } from './geo.js';
 import { addGrass } from './lane.js';
 import { laneY } from './level.js';
 import { FILE } from './textures.js';
@@ -14,7 +14,7 @@ export const LOOK = [
   [ // Verde: día, tarde y atardecer
     { top: 0x4fa8ff, bottom: 0xd6f0ff, fog: 0xc4e8ff, sun: 0xfff1d6, hemi: 0xdfeeff, mtnLow: 0x4f7d5a, mtnHigh: 0x7d8c96, snow: 0xf4fbff,
       decor: { tree: 30, pine: 16, bush: 20, totem: 6, mush: 8, rock: 10, arch: 4 } },
-    { top: 0x3d86e0, bottom: 0xffe2b0, fog: 0xf0d7a8, sun: 0xffdcaa, hemi: 0xffeedd, mtnLow: 0x5b7c4a, mtnHigh: 0x8a7a68, snow: 0xfff3e0,
+    { top: 0x3d86e0, bottom: 0xf2e6cc, fog: 0xd9e4e8, sun: 0xffdcaa, hemi: 0xffeedd, mtnLow: 0x4f7a55, mtnHigh: 0x7e878c, snow: 0xf1f6fa,
       decor: { tree: 14, pine: 34, bush: 10, totem: 14, mush: 6, rock: 14, arch: 6 } },
     { top: 0x5a4fc4, bottom: 0xffb27a, fog: 0xe8a07c, sun: 0xffc08a, hemi: 0xffd7b8, mtnLow: 0x4e6a5a, mtnHigh: 0x7a5f72, snow: 0xffd9bd,
       decor: { tree: 22, pine: 10, bush: 12, totem: 4, mush: 22, rock: 18, arch: 12 } },
@@ -165,23 +165,21 @@ const piece = (B, key, geo, mat, o, ox, oy, oz, sx, sy, sz, color, rot) => {
 
 // Tipos de decoración. o = { x, y, z, s, col } (base en el terreno, escala y tinte)
 const DEC = {
-  tree(B, o, M) {
-    piece(B, 'trunk', UNIT_CYL, M.bark, o, 0, 1.7, 0, 0.22, 3.4, 0.22);
-    piece(B, 'crown', UNIT_SPHERE, M.leaf, o, -0.3, 3.9, 0, 1.5, undefined, undefined, o.col);
-    piece(B, 'crown', UNIT_SPHERE, M.leaf, o, 0.9, 4.3, 0.3, 1.1, undefined, undefined, o.col);
-    piece(B, 'crown', UNIT_SPHERE, M.leaf, o, -0.6, 4.9, -0.2, 0.9, undefined, undefined, o.col);
-    piece(B, 'crown', UNIT_SPHERE, M.leaf, o, 0.2, 5.4, 0.1, 0.8, undefined, undefined, o.col);
+  tree(B, o, M) {                                       // árbol redondo: tronco visible y copa irregular
+    piece(B, 'trunk', UNIT_CYL, M.bark, o, 0, 1.5, 0, 0.24, 3.0, 0.24);
+    const crown = [[0, 3.5, 0, 1.25], [-0.95, 3.0, 0.25, 0.95], [0.95, 3.15, -0.2, 1.0], [0.05, 4.6, 0.15, 0.95], [-0.35, 2.9, -0.7, 0.8], [0.6, 2.75, 0.7, 0.75]];
+    for (const [ox, oy, oz, r] of crown) piece(B, 'crown', LUMP_GEO, M.leaf, o, ox, oy, oz, r, r * 0.9, r, o.col);
   },
-  pine(B, o, M) {
-    piece(B, 'trunk', UNIT_CYL, M.bark, o, 0, 1.2, 0, 0.18, 2.4, 0.18);
-    piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 2.6, 0, 1.5, 2.6, 1.5, o.col);
-    piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 3.9, 0, 1.15, 2.2, 1.15, o.col);
-    piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 5.1, 0, 0.75, 1.8, 0.75, o.col);
+  pine(B, o, M) {                                       // pino: tronco visible y tres pisos de conos
+    piece(B, 'trunk', UNIT_CYL, M.bark, o, 0, 1.0, 0, 0.17, 2.0, 0.17);
+    piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 2.2, 0, 1.6, 2.0, 1.6, o.col);
+    piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 3.3, 0, 1.25, 1.8, 1.25, o.col);
+    piece(B, 'crown', UNIT_CONE, M.leaf, o, 0, 4.3, 0, 0.8, 1.6, 0.8, o.col);
   },
   bush(B, o, M) {
-    piece(B, 'crown', UNIT_SPHERE, M.leaf, o, 0, 0.7, 0, 1.0, 0.7, 0.9, o.col);
-    piece(B, 'crown', UNIT_SPHERE, M.leaf, o, 1.0, 0.5, 0.4, 0.7, 0.5, 0.6, o.col);
-    piece(B, 'crown', UNIT_SPHERE, M.leaf, o, -0.9, 0.5, -0.2, 0.75, 0.55, 0.7, o.col);
+    piece(B, 'crown', LUMP_GEO, M.leaf, o, 0, 0.6, 0, 1.0, 0.7, 0.9, o.col);
+    piece(B, 'crown', LUMP_GEO, M.leaf, o, 1.0, 0.45, 0.4, 0.7, 0.5, 0.6, o.col);
+    piece(B, 'crown', LUMP_GEO, M.leaf, o, -0.9, 0.45, -0.2, 0.75, 0.55, 0.7, o.col);
     piece(B, 'flower', UNIT_SPHERE, M.flower, o, 0.3, 1.2, 0.8, 0.09, undefined, undefined, 0xffd54a);
     piece(B, 'flower', UNIT_SPHERE, M.flower, o, -0.5, 1.1, 0.6, 0.09, undefined, undefined, 0xff7aa8);
     piece(B, 'flower', UNIT_SPHERE, M.flower, o, 0.7, 0.95, 0.5, 0.09, undefined, undefined, 0xffffff);
@@ -198,8 +196,8 @@ const DEC = {
     piece(B, 'cap', UNIT_SPHERE, M.capW, o, 0, 0.62, 0, 0.32, 0.22, 0.32, o.capCol);
     piece(B, 'dark', UNIT_SPHERE, M.white, o, 0.1, 0.8, 0.12, 0.05);
   },
-  rock(B, o, M, rng) {
-    piece(B, 'rock', ROCK_GEO, M.rock, o, 0, 0.6, 0, 1.2 + rng() * 0.8, 0.9, 1.0);
+  rock(B, o, M, rng) {                                  // roca medio enterrada, de forma irregular
+    piece(B, 'rock', ROCK_GEO, M.rock, o, 0, 0.3, 0, 1.0 + rng() * 0.9, 0.6 + rng() * 0.5, 0.9 + rng() * 0.5, o.rockCol);
   },
   arch(B, o, M, rng, ctx) {
     const G = ctx.chunkOf(o.x);
@@ -359,6 +357,7 @@ export function buildBackdrop(lv, zi, ai, T, chunkOf, root) {
       x, y, z: LANE_Z - d, s: 0.8 + rng() * 0.7,
       col: new THREE.Color().setHSL(0.27 + (rng() - 0.5) * 0.1, 0.45 + rng() * 0.25, 0.55 + rng() * 0.2).getHex(),
       capCol: [0xd7262b, 0xffb300, 0x8e6cf0, 0xf5f5f5][Math.floor(rng() * 4)],
+      rockCol: [0xffffff, 0xd8d0c4, 0xbdb5a8][Math.floor(rng() * 3)],
     };
     DEC[k](B, o, M, rng, ctx);
   };

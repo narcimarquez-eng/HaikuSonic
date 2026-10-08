@@ -1,5 +1,6 @@
 // Geometría compartida y ayudantes para crear mallas
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const h1 = (n) => { const s = Math.sin(n) * 43758.5453; return s - Math.floor(s); };
 
@@ -24,8 +25,9 @@ function lumpy(geo, amp, sy = 1) {
   geo.computeVertexNormals();
   return geo;
 }
-export const ROCK_GEO = lumpy(new THREE.IcosahedronGeometry(1, 2), 0.22, 0.85);
-export const LUMP_GEO = lumpy(new THREE.IcosahedronGeometry(1, 2), 0.18);
+// Mallas con vértices compartidos: así el sombreado es suave y no facetado
+export const ROCK_GEO = lumpy(mergeVertices(new THREE.IcosahedronGeometry(1, 2)), 0.22, 0.85);
+export const LUMP_GEO = lumpy(mergeVertices(new THREE.IcosahedronGeometry(1, 2)), 0.18);
 
 // Brizna de hierba: triángulos curvados de 0.6 de alto (base en y = 0)
 export const BLADE_GEO = (() => {

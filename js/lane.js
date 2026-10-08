@@ -1,9 +1,16 @@
-// Pista: suelo, rampas, muelles, piedras, salientes, plataformas, puentes, hierba y tubos verticales
+// Pista: suelo, rampas, muelles, piedras, salientes, plataformas, puentes, hierba, tubos, señales y galerías
 import * as THREE from 'three';
 import { FILE, tiled } from './textures.js';
 import { mulberry32 } from './util.js';
-import { BLADE_GEO, CUT_PLANES, ROCK_GEO, UNIT_CYL, UNIT_SPHERE, addBox, cyl, extrudeZ, instanced, lensShape, mesh, prism } from './geo.js';
-import { laneY, slopeAt, TUBE_R } from './level.js';
+import { BLADE_GEO, CUT_PLANES, ROCK_GEO, UNIT_CONE, UNIT_CYL, UNIT_SPHERE, addBox, cyl, extrudeZ, instanced, lensShape, mesh, prism } from './geo.js';
+import { laneY, pathAt, slopeAt, TUBE_R } from './level.js';
+
+// Colores de acento y de la galería (los mismos que en backdrop.js)
+const ACCENT_HEX = [0xffd24a, 0xff9800, 0x00e5ff];
+const WALL_HEX = [0x6b6358, 0x4c525b];     // pared de fondo de la galería
+const RIB_HEX = [0xc6ff6b, 0x9fb3c8, 0x7dffc4];      // anillos y bridas del tubo (no se confunden con los anillos dorados)
+const CRYSTAL_HEX = [0x7dffb0, 0x5ce1ff, 0x7dffc4];  // cristales de la galería
+const FLOOR_HEX = [0x8c8474, 0x9aa4ae];    // suelo de la galería
 
 // Hierba 3D: briznas instanciadas y, opcionalmente, flores
 export function addGrass(G, surfs, density, rnd, flowers) {
@@ -61,10 +68,10 @@ function buildGear(mat) {
   return gear;
 }
 
-// Tubo vertical: sección circular de radio TUBE_R alrededor de la trayectoria (plana en XY).
-// Se construye a mano con la normal de la trayectoria, así no se retuerce en los puntos de inflexión.
-// Se ve por dentro (BackSide) y el plano de corte quita la mitad cercana.
-export function buildTube(pt, T, G) {
+// Tubo: sección circular de radio TUBE_R alrededor de la trayectoria (plana en XY).
+// Se construye con la normal de la trayectoria para que no se retuerza; se ve por dentro (BackSide)
+// y el plano de corte quita la mitad cercana. Los anillos de refuerzo y las bridas quedan completos.
+export function buildTube(pt, T, G, zi) {
   const SEG = 24;
   const n = pt.pts.length;
   const pos = [], nrm = [], uv = [], idx = [];
@@ -93,7 +100,61 @@ export function buildTube(pt, T, G) {
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = false;
   G.add(m);
+
+  // Anillos de refuerzo a lo largo del tubo y bridas en las dos bocas
+  const rib = new THREE.Color(RIB_HEX[zi]);
+  const ringM = new THREE.MeshStandardMaterial({ color: rib, emissive: rib, emissiveIntensity: 0.2, metalness: 0.6, roughness: 0.3 });
+  const count = Math.max(3, Math.round(pt.L / 2.2));
+  const ribs = new THREE.InstancedMesh(new THREE.TorusGeometry(TUBE_R, 0.09, 8, 40), ringM, count);
+  const flanges = new THREE.InstancedMesh(new THREE.TorusGeometry(TUBE_R + 0.3, 0.2, 8, 40), ringM, 2);
+  const Z = new THREE.Vector3(0, 0, 1), q = new THREE.Quaternion(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), mtx = new THREE.Matrix4();
+  const place = (im, i, s) => {
+    const r = pathAt(pt, s);
+    p.set(r.P[0], r.P[1], 0);
+    q.setFromUnitVectors(Z, new THREE.Vector3(r.T[0], r.T[1], 0));   // el anillo queda perpendicular al tubo
+    im.setMatrixAt(i, mtx.compose(p, q, one));
+  };
+  for (let i = 0; i < count; i++) place(ribs, i, pt.L * (i + 0.5) / count);
+  place(flanges, 0, 0); place(flanges, 1, pt.L);
+  ribs.instanceMatrix.needsUpdate = true; flanges.instanceMatrix.needsUpdate = true;
+  G.add(ribs, flanges);
   return m;
+}
+
+// Señal de bajada: poste de acero y placa con una flecha hacia abajo
+function buildSign(G, x, y, T) {
+  const steel = new THREE.MeshStandardMaterial({ color: 0x8a949c, roughness: 0.4, metalness: 0.7 });
+  addBox(G, steel, x, y + 1.1, 0.2, 0.14, 2.2, 0.14);
+  const plateM = new THREE.MeshStandardMaterial({ map: T.arrowDown, emissive: 0xffffff, emissiveMap: T.arrowDown, emissiveIntensity: 0.35, roughness: 0.6 });
+  const plate = mesh(G, new THREE.PlaneGeometry(1.5, 1.5), plateM, x, y + 2.5, 0.25);
+  plate.castShadow = false;
+}
+
+// Galería bajo la pista: pared de fondo, cristales en el suelo, estalactitas bajo la losa y lámparas
+function buildGallery(gl, T, zi, chunkOf) {
+  const G = chunkOf(gl.xs);
+  const x0 = gl.xs, x1 = gl.xr + gl.w, bottom = gl.yF - 8;
+  const rnd = mulberry32(Math.round(gl.xs * 7) + zi * 101);
+  const wallM = new THREE.MeshStandardMaterial({ map: tiled(zi === 1 ? T.side : T.rock, (x1 - x0) / 6, 2), color: WALL_HEX[zi], roughness: 1 });
+  addBox(G, wallM, (x0 + x1) / 2, (bottom + gl.top) / 2, -1.9, x1 - x0, gl.top - bottom, 0.4);
+
+  // Entre los pozos: cristales en el suelo y estalactitas bajo la losa
+  const inX0 = gl.xs + gl.w + 1, inX1 = gl.xr - 1, span = inX1 - inX0;
+  const crystalM = new THREE.MeshStandardMaterial({ color: CRYSTAL_HEX[zi], emissive: CRYSTAL_HEX[zi], emissiveIntensity: 0.9, roughness: 0.3 });
+  const stalM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, 1, 1), color: 0x8a8478, roughness: 1 });
+  const crystals = [], stalactites = [];
+  for (let i = 0; i < Math.round(span / 4); i++) {
+    const h = 0.6 + rnd() * 0.8;
+    crystals.push({ x: inX0 + rnd() * span, y: gl.yF + h / 2, z: -1.2 - rnd() * 0.4, sx: 0.26, sy: h, sz: 0.26, rz: (rnd() - 0.5) * 0.5 });
+  }
+  for (let i = 0; i < Math.round(span / 5); i++) {
+    const h = 0.8 + rnd() * 1.2;
+    stalactites.push({ x: inX0 + rnd() * span, y: gl.top - 4 - h / 2, z: -1.0 - rnd() * 0.5, sx: 0.3 + rnd() * 0.2, sy: h, sz: 0.3, rx: Math.PI });
+  }
+  instanced(G, UNIT_CONE, crystalM, crystals);
+  instanced(G, UNIT_CONE, stalM, stalactites);
+  const lampM = new THREE.MeshBasicMaterial({ color: ACCENT_HEX[zi] });
+  for (const f of [0.3, 0.7]) mesh(G, UNIT_SPHERE, lampM, inX0 + span * f, gl.yF + 2.6, -1.7, 0.22).castShadow = false;
 }
 
 // Construye la pista en los grupos de cada tramo (chunkOf devuelve el grupo de una coordenada x)
@@ -117,10 +178,23 @@ export function buildLane(lv, zi, T, chunkOf) {
   for (const s of S) {
     if (s.kind === 'ground') {
       const w = s.x1 - s.x0, top = s.y1, cx = (s.x0 + s.x1) / 2, G = chunkOf(cx);
-      const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, (top + 14) / 4), roughness: 0.95 });
+      if (s.gallery) {
+        // Suelo de galería: roca (verde) o acero (industrial), sin hierba
+        const floorM = new THREE.MeshStandardMaterial({ map: tiled(zi === 1 ? T.plank : T.rock, w / 4, 1), color: FLOOR_HEX[zi], roughness: 0.9 });
+        addBox(G, floorM, cx, (s.y0 + top) / 2, 0, w, top - s.y0, 4);
+        if (s.boost) {
+          const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
+          addBox(G, chev, cx, top + 0.03, 0, w, 0.06, 2.6);
+        }
+        continue;
+      }
+      // La tierra queda 0.5 por debajo de la hierba para no compartir plano (evita destellos).
+      // Una losa solo llega hasta 4 unidades bajo la superficie: debajo está la galería.
+      const bottom = s.slab ? top - 4 : -14, yTop = top - 0.5;
+      const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, (yTop - bottom) / 4), roughness: 0.95 });
       const edgeM = new THREE.MeshStandardMaterial({ map: tiled(T.top, w / 4, 0.25), roughness: 0.9 });
       const topM = new THREE.MeshStandardMaterial({ map: tiled(T.top, w / 4, 1.1), roughness: 0.85 });
-      addBox(G, sideM, cx, (top - 14) / 2, 0, w, top + 14, 4);     // el frente llega hasta muy abajo: no se ve el cielo
+      addBox(G, sideM, cx, (bottom + yTop) / 2, 0, w, yTop - bottom, 4);
       addBox(G, [edgeM, edgeM, topM, sideM, edgeM, edgeM], cx, top - 0.25, 0, w, 0.5, 4.4);
       if (s.boost) {
         const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
@@ -132,7 +206,7 @@ export function buildLane(lv, zi, T, chunkOf) {
       const G = chunkOf((s.x0 + s.x1) / 2);
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, 0.25, 0.25), roughness: 0.95 });
       const topM = new THREE.MeshStandardMaterial({ map: tiled(T.top, 0.25, 0.25), roughness: 0.85 });
-      prism(G, [[s.x0, -4], [s.x1, -4], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2, 4, sideM);
+      prism(G, [[s.x0, -14], [s.x1, -14], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2, 4, sideM);
       prism(G, [[s.x0, s.ya], [s.x1, s.yb], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2.2, 4.4, topM);
       if (zi === 0) addGrassSurf(G, { x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: (x) => slopeAt(s, x) });
     } else if (s.kind === 'spring') {
@@ -147,6 +221,8 @@ export function buildLane(lv, zi, T, chunkOf) {
       const m = mesh(G, ROCK_GEO, rockM, (s.x0 + s.x1) / 2, s.y0 + h * 0.5, 0, w * 0.52, h * 0.55, 0.95);
       m.rotation.set(0.2, 0.7, 0.1);
     } else if (s.kind === 'ceiling') {
+      // La losa de una galería tiene su techo en el suelo de la pista de arriba: no se dibuja aquí
+      if (s.slabCeil) continue;
       // Saliente de roca sobre la pista: se pasa por debajo; pilares de roca detrás
       const G = chunkOf(s.x0);
       const rockM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, 1, 1), roughness: 0.95 });
@@ -214,6 +290,10 @@ export function buildLane(lv, zi, T, chunkOf) {
       }
     }
   }
+
+  // Galerías y señales de bajada
+  for (const gl of lv.galleries) buildGallery(gl, T, zi, chunkOf);
+  for (const pt of lv.paths) if (pt.kind === 'drop') buildSign(chunkOf(pt.x0 - 3), pt.x0 - 3, pt.y0 - 0.5, T);
 
   // Hierba: briznas sobre las superficies verdes (una malla por tramo)
   for (const [G, surfs] of grass) addGrass(G, surfs, 4, rnd, true);

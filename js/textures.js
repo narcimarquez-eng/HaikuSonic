@@ -169,6 +169,18 @@ function tubeDraw(base, check, rim) {
     g.fillRect(0, s * 0.35, s, s * 0.03);
   };
 }
+// Señal de bajada: flecha hacia abajo sobre placa oscura
+function arrowDraw(acc) {
+  return (g, s) => {
+    g.fillStyle = '#161a20'; g.fillRect(0, 0, s, s);
+    g.strokeStyle = acc; g.lineWidth = 12; g.strokeRect(10, 10, s - 20, s - 20);
+    g.fillStyle = acc;
+    g.beginPath();
+    g.moveTo(s * 0.5 - 34, 58); g.lineTo(s * 0.5 + 34, 58); g.lineTo(s * 0.5 + 34, 150);
+    g.lineTo(s * 0.5 + 70, 150); g.lineTo(s * 0.5, 218); g.lineTo(s * 0.5 - 70, 150); g.lineTo(s * 0.5 - 34, 150);
+    g.closePath(); g.fill();
+  };
+}
 function hazardDraw(g, s) {
   g.fillStyle = '#f2c200'; g.fillRect(0, 0, s, s);
   g.fillStyle = '#1b1b1b';
@@ -197,9 +209,9 @@ function steelDraw(g, s) {
 
 const ACCENT = ['#ffd24a', '#ff9800', '#00e5ff'];
 const TUBE_COLORS = [
-  ['#1f3a2a', '#2f5a3e', '#7be35b'],   // verde: tubo oscuro con borde verde
-  ['#3a3f47', '#4f5761', '#ffc107'],   // industrial: acero con borde amarillo
-  ['#0c2a46', '#174a7a', '#4dff8a'],   // acuática: azul con borde verde
+  ['#2b6a3c', '#4fa35a', '#c6ff6b'],   // verde: cuadros verdes con bordes lima
+  ['#505863', '#7a8591', '#ffc92b'],   // industrial: acero con bordes amarillos
+  ['#135d8f', '#2f9bd6', '#7dffc4'],   // acuática: azul con bordes verde menta
 ];
 
 const CACHE = {};
@@ -213,6 +225,7 @@ export function zoneTextures(zi) {
   T.cloud = pixelTex(256, cloudPix, { alpha: true });
   T.mountain = pixelTex(256, mountPix);
   T.chevron = canvasTex(256, chevronDraw(ACCENT[zi]));
+  T.arrowDown = canvasTex(256, arrowDraw(ACCENT[zi]));
   T.tube = canvasTex(256, tubeDraw(...TUBE_COLORS[zi]));
   if (zi === 0) {
     T.top = FILE.grass || pixelTex(256, grassPix);

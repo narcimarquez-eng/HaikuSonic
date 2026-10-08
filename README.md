@@ -23,7 +23,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 
 - 3 zonas (Verde, Industrial, Acuática) × 3 actos = 9 fases generadas proceduralmente con semilla fija. Cada fase mide entre 950 y 1350 unidades y cambia su mezcla de tramos según el acto.
 - Tramos para correr, colinas con rampas, huecos (puentes de troncos, pasarelas de acero o cuerdas; en el agua, balsas), franjas de aceleración con flechas, escaladas con muelles.
-- Tubos verticales que se recorren por dentro: **bucles** (hay que venir rápido, por eso hay una franja de aceleración antes) y **colinas dentro de un tubo ondulado**. El tubo tiene cuadros y bordes de color, y se corta por la mitad para ver al erizo dentro.
+- Tubos verticales que se recorren por dentro: **bucles** (hay que venir rápido, por eso hay una franja de aceleración antes) y **bajadas a una galería subterránea**: un tubo baja de la superficie a un pasadizo bajo la pista, recorre la galería (con cristales, estalactitas y piedras) y otro tubo la devuelve arriba. La bajada es opcional: se puede saltar el pozo por encima. Los tubos tienen cuadros, anillos de refuerzo y bridas en las bocas, y se corta la mitad cercana para ver al erizo dentro. Una señal con flecha marca cada bajada.
 - Salientes de roca que se pasan por debajo (no se puede saltar a través de ellos) y piedras sólidas que se saltan o se rodean.
 - Anillos (instancing), muelles, plataformas de una cara, plataformas móviles con engranajes, enemigos que se pisan o se destruyen rodando, postes de control y meta.
 - Terreno de fondo continuo con la pista, por tramos, con colinas (verde), fábricas (industrial) o mar con islas (acuática).
@@ -36,6 +36,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 ## Limitaciones actuales
 
 - Los tubos son planos (en el eje X-Y): no hay tubos que se crucen en profundidad.
+- La zona acuática no tiene bajadas: el agua llega hasta -3.4 (línea de muerte), así que no cabe una galería bajo la pista.
 - Sin raíles con cadenas colgantes ni sonido.
 - Los escenarios son geometría procedural de Three.js; no se usan modelos de Blender.
 - Pendiente de probar en un móvil real: rendimiento y tamaño de la pantalla. Las pruebas automáticas se han hecho en Chromium headless con renderizado por software.
