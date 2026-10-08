@@ -105,7 +105,7 @@ function resetPlayer() {
   Object.assign(player, {
     x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1, grounded: false, groundSolid: null,
     jumping: false, spinAir: false, path: null, s: 0, pv: 0, crouch: false, charge: 0,
-    dashT: 0, rolling: false, roll: 0, invT: 0, shield: false, speedT: 0, starT: 0,
+    dashT: 0, rolling: false, roll: 0, invT: 0, shield: false, speedT: 0, starT: 0, ramp: null,
   });
 }
 
@@ -117,6 +117,7 @@ function loadLevel(n) {
   lv.scatter = [];
   G.lv = lv;
   G.fx.length = 0;
+  G.secretsFound = 0;
   W = buildWorld(lv, zi, ai, scene);
   applyLook(lookFor(zi, ai));
   resetPlayer();
@@ -157,7 +158,8 @@ G.onComplete = () => {
   G.mode = 'clear';
   const bonus = Math.max(0, 300 - Math.floor(G.levelTime)) * 10;
   G.score += player.rings * 10 + bonus;
-  $('clearText').textContent = `Anillos: ${player.rings} · Tiempo: ${fmtTime(G.levelTime)} · Bonus: ${bonus}`;
+  const secrets = G.lv.secrets.length ? ` · Secretos: ${G.secretsFound}/${G.lv.secrets.length}` : '';
+  $('clearText').textContent = `Anillos: ${player.rings} · Tiempo: ${fmtTime(G.levelTime)} · Bonus: ${bonus}${secrets}`;
   $('btnNext').textContent = levelIndex < LEVELS - 1 ? 'SIGUIENTE' : 'JUGAR DE NUEVO';
   show('clear', true);
 };
@@ -193,7 +195,10 @@ $('btnRetry').addEventListener('click', () => {
 });
 
 /* ---------- Marcador y bucle principal ---------- */
-const hud = { rings: $('rings'), lives: $('lives'), time: $('time'), score: $('score'), power: $('power') };
+const hud = { rings: $('rings'), lives: $('lives'), time: $('time'), score: $('score'), power: $('power'), secrets: $('secrets') };
+// Aviso al encontrar una zona secreta (durante un rato sustituye al contador de secretos)
+let secretToastUntil = 0;
+G.onSecret = () => { secretToastUntil = performance.now() + 2500; };
 function updateHud() {
   const r = String(player.rings), l = String(G.lives), t = fmtTime(G.levelTime), s = String(G.score + player.rings * 10);
   if (hud.rings.textContent !== r) hud.rings.textContent = r;
@@ -206,6 +211,10 @@ function updateHud() {
   if (player.starT > 0) parts.push(`ESTRELLA ${Math.ceil(player.starT)}`);
   hud.power.textContent = parts.join(' · ');
   hud.power.classList.toggle('hidden', !parts.length);
+  const total = G.lv ? G.lv.secrets.length : 0;
+  const sText = performance.now() < secretToastUntil ? '¡ZONA SECRETA!' : `SECRETOS ${G.secretsFound}/${total}`;
+  if (hud.secrets.textContent !== sText) hud.secrets.textContent = sText;
+  hud.secrets.classList.toggle('hidden', !total);
 }
 
 let accumulator = 0;

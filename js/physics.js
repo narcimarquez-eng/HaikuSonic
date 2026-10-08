@@ -25,6 +25,7 @@ const SPRING_VX = 24;             // velocidad horizontal máxima al salir de un
 const ITEM_R = 1.0;               // radio para recoger un potenciador
 const POWER_T = 10;               // segundos de zapatillas y de estrella
 const SPEED_MUL = 1.35;           // multiplicador de velocidad máxima con zapatillas
+const LAUNCH_MAX = 26;            // velocidad vertical máxima al salir volando de una pendiente (a más, más alto)
 
 // Estado del jugador (se reinicia en cada fase)
 export const player = {
@@ -39,6 +40,7 @@ export const player = {
 export const G = {
   mode: 'title', lives: 3, score: 0, levelTime: 0, lv: null,
   checkpoint: { x: 0, y: 2 }, onComplete: null, onGameOver: null,
+  secretsFound: 0, onSecret: null,   // zonas secretas de la fase encontradas y aviso al encontrar una
   fx: [],                           // efectos pendientes (chispas, salpicaduras): main.js los convierte en partículas
 };
 
@@ -195,6 +197,7 @@ function resolveX(p, solids, prevX) {
   const top = p.y + PH / 2, bottom = p.y - PH / 2;
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
+    if (s.broken) continue;
     // Una cara o solo techo no bloquean de lado; pinchos y agua no son sólidos (hacen daño o matan en stepWorld)
     if (s.kind === 'platform' || s.kind === 'ceiling' || s.kind === 'spikes' || s.kind === 'water') continue;
     if (top <= s.y0 + EPS || bottom >= s.y1 - STEP_UP) continue;
@@ -215,7 +218,7 @@ function resolveY(p, solids, prevBottom) {
   p.grounded = false; p.groundSolid = null;
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
-    if (right <= s.x0 || left >= s.x1) continue;
+    if (s.broken || right <= s.x0 || left >= s.x1) continue;
     if (s.kind === 'spikes' || s.kind === 'water') continue;
     if (s.kind === 'spring') {
       // Un muelle se activa al pisarlo (de frente o al caer encima) y lanza sin frenar la velocidad horizontal
@@ -265,6 +268,13 @@ function pathStep(dt) {
   const r = pathAt(pt, p.s);
   p.x = r.P[0] + r.N[0] * 0.5; p.y = r.P[1] + r.N[1] * 0.5;
   p.vx = p.pv * r.T[0]; p.vy = p.pv * r.T[1];
+}
+
+// Losa agrietada rota por un jugador rodando: deja de ser sólida y su dibujo desaparece
+function breakCrack(s) {
+  s.broken = true;
+  if (s.meshes) for (const m of s.meshes) m.visible = false;
+  G.fx.push({ x: (s.x0 + s.x1) / 2, y: s.y1, n: 16, pal: 0 });
 }
 
 function stepPlayer(dt) {
@@ -330,12 +340,27 @@ function stepPlayer(dt) {
   if (p.grounded) p.vy = -GRAVITY * dt;
   else p.vy = Math.max(p.vy - GRAVITY * dt, -MAX_FALL);
 
+  const groundedBefore = p.grounded;
   const prevX = p.x;
   p.x += p.vx * dt;
   resolveX(p, lv.solids, prevX);
   const prevBottom = p.y - PH / 2;
   p.y += p.vy * dt;
   resolveY(p, lv.solids, prevBottom);
+  // Despegue de una pendiente: si la superficie cae justo después (cresta), el jugador sale por la tangente de la
+  // rampa, así que a más velocidad sube más. Un muelle (vy positiva) no cuenta
+  if (groundedBefore && !p.grounded && p.vy <= 0 && p.ramp && Math.abs(p.x - p.ramp.x) < 4.5) {
+    p.vy = clamp(p.vx * p.ramp.g, -MAX_FALL, LAUNCH_MAX);
+  }
+  if (p.grounded && p.groundSolid && p.groundSolid.kind === 'slope') {
+    const sl = p.groundSolid;
+    p.ramp = { g: (sl.yb - sl.ya) / (sl.x1 - sl.x0), x: p.x };
+  }
+  // Losa agrietada: rodando sobre ella se hunde y el jugador cae a la galería (andando la cruza sin caer)
+  if (p.grounded && p.groundSolid && p.groundSolid.crack && p.rolling) {
+    breakCrack(p.groundSolid);
+    p.grounded = false; p.groundSolid = null; p.vy = -2;
+  }
   if (p.grounded) p.spinAir = false;
 
   // Franja de aceleración: empuja hacia delante mientras estés encima
@@ -356,7 +381,7 @@ function stepPlayer(dt) {
   if (p.vx > 0) {
     for (const pt of lv.paths) {
       const onBase = p.grounded || (pt.kind === 'rise' && p.y - PH / 2 < pt.y0 + 1.5);
-      if (onBase && prevX < pt.x0 && p.x >= pt.x0) {
+      if (onBase && prevX < pt.x0 && p.x >= pt.x0 && (!pt.secret || p.rolling)) {
         p.path = pt; p.s = 0; p.pv = p.vx;
         p.x = pt.x0; p.y = pt.y0 + 0.5;
         p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
@@ -426,6 +451,12 @@ export function stepWorld(dt) {
   }
 
   stepPlayer(dt);
+  for (const z of lv.secrets) {
+    if (!z.found && p.x >= z.x0 && p.x <= z.x1 && p.y >= z.y0 && p.y <= z.y1) {
+      z.found = true; G.secretsFound++;
+      if (G.onSecret) G.onSecret();
+    }
+  }
 
   // Pinchos: tocarlos hace daño (como un enemigo). Agua: caer dentro de un hueco mata
   for (const s of lv.solids) {

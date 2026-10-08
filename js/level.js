@@ -22,14 +22,14 @@ const WALL = 8.5;             // distancia del muelle al muro de una meseta: a v
 // water: un hueco con agua, con muelle y meseta. lift: muelle y meseta de 4. climb: dos mesetas (4 y 8)
 const PROFILE = [
   [ // Verde: tramos, bucles, valles, arroyos, cascadas, pinchos, charcos, mesetas, avispas y erizos
-    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { upper: 6, tunnels: 8, run: 30, hills: 14, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
-    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { upper: 6, tunnels: 8, run: 22, hills: 10, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
-    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { upper: 6, tunnels: 8, run: 18, hills: 8, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
+    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { upper: 6, tunnels: 8, run: 26, hills: 34, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
+    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { upper: 6, tunnels: 8, run: 18, hills: 30, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
+    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { upper: 6, tunnels: 8, run: 14, hills: 26, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
   ],
   [ // Industrial: cintas, huecos, valles, arroyos, pinchos, mesetas, torretas y erizos
-    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { upper: 6, tunnels: 8, run: 26, hills: 4, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, gallery: 6, spike: 9, lift: 8, climb: 5 } },
-    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { upper: 6, tunnels: 8, run: 20, hills: 4, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, gallery: 7, spike: 11, lift: 9, climb: 7 } },
-    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { upper: 6, tunnels: 8, run: 16, hills: 4, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, gallery: 8, spike: 13, lift: 10, climb: 8 } },
+    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { upper: 6, tunnels: 8, run: 22, hills: 28, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, gallery: 6, spike: 9, lift: 8, climb: 5 } },
+    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { upper: 6, tunnels: 8, run: 18, hills: 28, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, gallery: 7, spike: 11, lift: 9, climb: 7 } },
+    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { upper: 6, tunnels: 8, run: 14, hills: 24, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, gallery: 8, spike: 13, lift: 10, climb: 8 } },
   ],
   [ // Acuática: balsas, bucles, valles con laguna, pinchos de coral, agua y mesetas
     { len: 1000, enemies: 0.5, fly: 0.3, shoot: 0.1, wasp: 0.3, hop: 0.1, spiny: 0.1, w: { upper: 6, run: 20, hills: 8, dip: 8, gap: 14, boost: 4, loop: 7, spike: 6, water: 9, lift: 6, climb: 4 } },
@@ -111,7 +111,7 @@ export function buildLevel(zi, ai) {
   const lv = {
     zone: zi, act: ai, endX: 0, goalX: 0, goalY: 0, killY: KILL_Y[zi], t: 0,
     solids: [], enemies: [], rings: [], checkpoints: [], paths: [], galleries: [], shots: [], falls: [], items: [],
-    blasts: [], pendingKills: [],
+    blasts: [], pendingKills: [], secrets: [],
   };
   const S = lv.solids;
   let x = -10, top = 0, nextCp = 60;
@@ -227,25 +227,33 @@ export function buildLevel(zi, ai) {
     x = x1;
   };
 
-  // Colinas: subidas y bajadas de rampa, suaves o empinadas, con un pequeño tramo plano entre ellas.
-  // La zona acuática tiene un mar que no deja subir ni bajar tanto
+  // Colinas: subidas y bajadas de rampa, suaves, empinadas o de unos 60° (verde e industrial), con un pequeño tramo
+  // plano entre ellas. Tras una pendiente de 60° que sube, a veces la cresta cae enseguida: a buena velocidad el erizo
+  // sale volando por ella. La zona acuática tiene un mar que no deja subir ni bajar tanto
   const hillsSec = (len) => {
     const end = x + len, lo = zi === 2 ? 0 : -2, hi = zi === 2 ? 3.2 : 6;
+    let crest = false;                                  // la pendiente siguiente baja (cresta tras una pendiente de 60°)
     while (x < end - 4) {
-      const steep = rng() < 0.35;
-      const L = steep ? rnd(7, 10) : rnd(11, 16);
-      const rise = steep ? rnd(3.5, 5) : rnd(2.5, 4.5);
-      const nt = clamp(top + (rng() < 0.5 ? -1 : 1) * rise, lo, hi);
+      const roll = rng();
+      const cliff = zi !== 2 && roll < 0.3;              // unos 60°: sube o baja en pocos metros
+      const steep = !cliff && roll < 0.6;
+      const rise = cliff ? rnd(4.5, 6.5) : steep ? rnd(3.5, 5) : rnd(2.5, 4.5);
+      const down = crest || rng() < 0.5;
+      const nt = clamp(top + (down ? -1 : 1) * rise, lo, hi);
+      let rising = false;
       if (Math.abs(nt - top) > 0.3) {
+        const L = cliff ? Math.abs(nt - top) / Math.tan(rnd(56, 62) * Math.PI / 180) : steep ? rnd(7, 10) : rnd(11, 16);
         const sl = { x0: x, x1: x + L, ya: top, yb: nt };
         S.push({ kind: "slope", ...sl, y0: -4, y1: Math.max(top, nt) });
         for (let i = 0; i < 4; i++) {
           const sx = x + L * (0.2 + i * 0.2);
           lv.rings.push({ x: sx, y: slopeAt(sl, sx) + 1.3, taken: false });
         }
+        rising = nt > top;
         x += L; top = nt;
       }
-      const f = rnd(3, 6);
+      crest = cliff && rising && rng() < 0.5;
+      const f = crest ? rnd(0.5, 1.5) : rnd(3, 6);
       pushGround(x, x + f, top);
       x += f;
     }
@@ -280,17 +288,22 @@ export function buildLevel(zi, ai) {
   // Bajada: un tubo lleva de la superficie a una galería bajo la pista; otro tubo la devuelve arriba.
   // La losa de la superficie queda encima de la galería, así que el atajo es opcional (se puede saltar el pozo).
   // La galería es un túnel rápido: su suelo entero es franja de aceleración.
-  const gallerySec = (withItem = false) => {
+  // Secreta (trap): en vez del pozo, una losa agrietada en la pista. Andando se cruza; rodando se hunde y el jugador
+  // cae a la galería, que tiene dos potenciadores. Es la única entrada.
+  const gallerySec = (withItem = false, trap = false) => {
     const W = DROP_W, D = DROP_D, yF = top - D;
     const Xs = x + rnd(12, 18);                     // boca de bajada, en la superficie
     const G = rnd(40, 50);                           // longitud de la galería entre los dos pozos
     const Xr = Xs + W + G;                           // boca de subida, en el suelo de la galería
     pushGround(x, Xs, top);
     ringArc(x + (Xs - x) * 0.5, top + 1.2, 4.5, 5);
-    const drop = addPath(slidePts(Xs, top + 0.5, W, D, -1), 'drop');
-    const rise = addPath(slidePts(Xr, yF + 0.5, W, D, 1), 'rise');
-    pathRings(drop, [0.3, 0.5, 0.7]);
-    pathRings(rise, [0.3, 0.5, 0.7]);
+    if (trap) {
+      S.push({ kind: 'ground', x0: Xs, x1: Xs + W, y0: -4, y1: top, crack: true, noEnemy: true });
+      S.push({ kind: 'wall', x0: Xs - 0.6, x1: Xs, y0: yF - 8, y1: top - 4 });   // pared del fondo: no se sale por el lado
+    } else {
+      pathRings(addPath(slidePts(Xs, top + 0.5, W, D, -1), 'drop'), [0.3, 0.5, 0.7]);
+    }
+    pathRings(addPath(slidePts(Xr, yF + 0.5, W, D, 1), 'rise'), [0.3, 0.5, 0.7]);
     // Suelo de la galería: franja de aceleración de extremo a extremo
     S.push({ kind: 'ground', x0: Xs, x1: Xr - 8, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
     S.push({ kind: 'ground', x0: Xr - 8, x1: Xr - 1, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
@@ -300,7 +313,14 @@ export function buildLevel(zi, ai) {
     S.push({ kind: 'ceiling', x0: Xs + W, x1: Xr, y0: top - 4, y1: top - 3.9, base: top, slabCeil: true });
     lv.galleries.push({ xs: Xs, xr: Xr, w: W, yF, top });
     ringLine(Xs + W + 2, Xr - 2, yF + 1.2, 8);
-    if (withItem) itemAt((Xs + W + Xr) / 2 + rnd(-4, 4), yF + 1.3, randItem());
+    if (trap) {
+      const mid = (Xs + W + Xr) / 2;
+      itemAt(mid - 3, yF + 1.3, randItem());
+      itemAt(mid + 3, yF + 1.3, 'life');
+      lv.secrets.push({ kind: 'gallery', x0: Xs, x1: Xr + W, y0: yF - 8, y1: top - 4, found: false });
+    } else if (withItem) {
+      itemAt((Xs + W + Xr) / 2 + rnd(-4, 4), yF + 1.3, randItem());
+    }
     if (rng() < 0.6) {
       lv.enemies.push({ x: rnd(Xs + W + 3, Xr - 10), minX: Xs + W + 1, maxX: Xr - 9, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: yF });
     }
@@ -339,13 +359,16 @@ export function buildLevel(zi, ai) {
     pathRings(addPath(slidePts(dx1, DH + 0.5, W, DH - top, -1), 'drop'), [0.4, 0.7]);
     if (secret) {
       const xf = xs + W, xc = xf + 10;                // tubo de subida en la plataforma; boca de bajada de la cámara
-      pathRings(addPath(slidePts(xs, DH + 0.5, W, CH - DH, 1), 'rise'), [0.3, 0.5, 0.7]);
+      const cham = addPath(slidePts(xs, DH + 0.5, W, CH - DH, 1), 'rise');
+      cham.secret = true;                             // solo entra rodando: andando se pasa por encima
+      pathRings(cham, [0.3, 0.5, 0.7]);
       S.push({ kind: 'wall', x0: xf - 1, x1: xc, y0: CH - 2.2, y1: CH, sup: DH });      // suelo de la cámara, sobre pilares
       S.push({ kind: 'wall', x0: xf - 1, x1: xc, y0: CH + 4, y1: CH + 4.6 });           // techo
       ringLine(xf + 1, xc - 1, CH + 2.2, 5);
       itemAt(xf + 3, CH + 1.3, 'star');
       itemAt(xf + 7, CH + 1.3, 'life');
       pathRings(addPath(slidePts(xc, CH + 0.5, W, CH - DH, -1), 'drop'), [0.5]);
+      lv.secrets.push({ kind: 'chamber', x0: xf - 1, x1: xc, y0: CH - 2.2, y1: CH + 4.6, found: false });
     }
     x = dx1 + W + 10;
   };
@@ -470,13 +493,17 @@ export function buildLevel(zi, ai) {
   // Inicio tranquilo y después secciones según el perfil del acto
   runSec(rnd(24, 34), true);
   let secretPending = rng() < 0.7;      // a veces: una cámara oculta sobre la rama alta de este acto
+  let secretGal = zi === 2 ? 0 : 1 + (rng() < 0.5 ? 1 : 0);   // galerías secretas: losa agrietada que se hunde al rodar
   while (x < prof.len) {
     const r = pickWeighted(prof.w, rng);
     if (secretPending && x > prof.len * 0.35) { secretPending = false; upperSec(true); continue; }
+    if (secretGal > 0 && x > prof.len * 0.2 && (r === 'gallery' || x > prof.len * 0.6)) {
+      secretGal--; gallerySec(false, true); runSec(rnd(10, 16)); continue;
+    }
     if (r === 'upper') { upperSec(false); continue; }
     if (r === 'tunnels') { tunnelsSec(); runSec(rnd(10, 16)); continue; }
     if (r === 'run') runSec(rnd(30, 60));
-    else if (r === 'hills') hillsSec(rnd(45, 70));
+    else if (r === 'hills') hillsSec(rnd(60, 90));
     else if (r === 'gap') { gapSec(); runSec(rnd(10, 16)); }
     else if (r === 'boost') boostSec(rnd(28, 40));
     else if (r === 'loop') { loopSec(); runSec(rnd(12, 18)); }
