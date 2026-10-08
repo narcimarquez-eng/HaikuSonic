@@ -120,7 +120,7 @@ function fish(e, dt) {
     if (e.y <= e.base) { e.y = e.base; e.leap = false; e.cd = e.gap; }
   } else {
     e.cd -= dt;
-    if (e.cd <= 0) { e.leap = true; e.yv = 15.5; }
+    if (e.cd <= 0) { e.leap = true; e.yv = 11; }   // salta sobre el agua sin llegar a la altura de la pista
   }
 }
 

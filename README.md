@@ -22,8 +22,8 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 ## Contenido
 
 - 3 zonas (Verde, Industrial, Acuática) × 3 actos = 9 fases generadas proceduralmente con semilla fija. Cada fase mide entre 950 y 1350 unidades y cambia su mezcla de tramos según el acto.
-- Tramos para correr, colinas con rampas, huecos (puentes de troncos, pasarelas de acero o cuerdas; en el agua, balsas), franjas de aceleración con flechas, escaladas con muelles.
-- Tubos verticales que se recorren por dentro: **bucles** (hay que venir rápido, por eso hay una franja de aceleración antes) y **bajadas a una galería subterránea**: un tubo baja de la superficie a un pasadizo bajo la pista, recorre la galería (un túnel de aceleración con cristales, estalactitas y piedras) y otro tubo la devuelve arriba. La bajada es opcional: se puede saltar el pozo por encima. Los tubos tienen cuadros, anillos de refuerzo y bridas en las bocas, y se corta la mitad cercana para ver al erizo dentro. Una señal con flecha marca cada bajada.
+- Tramos para correr, colinas (algunas empinadas, de hasta 5 de altura), huecos (puentes de troncos, pasarelas de acero o cuerdas; en el agua, balsas), franjas de aceleración con flechas, escaladas con muelles.
+- Tubos verticales que se recorren por dentro: **bucles** (hay que venir rápido, por eso hay una franja de aceleración antes; el tubo entra por la pista y sale 3.6 unidades más adelante, dentro de un aro de roca abierto por abajo) y **bajadas a una galería subterránea**: un tubo baja de la superficie a un pasadizo bajo la pista, recorre la galería (un túnel de aceleración con cristales, estalactitas y piedras) y otro tubo la devuelve arriba. La bajada es opcional: se puede saltar el pozo por encima. Los tubos tienen cuadros, anillos de refuerzo y bridas en las bocas, y se corta la mitad cercana para ver al erizo dentro. Una señal con flecha marca cada bajada.
 - Salientes de roca que se pasan por debajo (no se puede saltar a través de ellos) y piedras sólidas que se saltan o se rodean.
 - Zonas de peligro: **pinchos** (en verde e industrial, a veces con una galería bajo ellos que sirve de atajo sin peligro) y **agua** (huecos que matan al caer). Un muelle, pisado corriendo, lanza al jugador por encima de la franja hasta una meseta: terreno sólido que sube de golpe 6.5 sobre la pista y baja después por una rampa.
 - Mesetas con muelle: un muelle en la pista lanza a una meseta de 4 de altura, y una escalada lleva desde esa meseta a otra de 8. Son terreno sólido que sube de golpe, no plataformas colgantes.
@@ -31,6 +31,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 - Enemigos nuevos (modelos de Blender): **drones voladores** que ondulan sobre la pista (se pisan desde un salto o un picado), **torretas** que disparan al jugador que se acerca (los proyectiles hieren al tocarlos) y un **jefe final** al final del tercer acto de cada zona: aguanta tres golpes (rodar contra él o pisarlo), con invulnerabilidad breve tras cada golpe.
 - Enemigos: caminantes; **avispas** que ondulan y se lanzan en picado; **saltamontes** que dan saltos; **erizos** con púas (solo los destruye rodar o cargar); **peces** que saltan del agua; drones y torretas. El giro en el aire (un salto o un muelle) destruye a cualquiera que toque, salvo a los erizos.
 - Más desniveles para coger velocidad: **valles** (una bajada en rampa hasta un fondo con franja de aceleración y una subida) y **mesetas**. Bajar una pendiente acelera y subir frena un poco. La velocidad al salir de un muelle se limita a 24 para que la meseta siguiente se alcance.
+- Enemigos repartidos: cada tramo de 100 unidades tiene al menos dos, sobre la pista llana y lejos de trampas.
 - Agua: **arroyos** y **lagunas** poco profundos por los que se chapotea (más despacio y salpicando), **cascadas** que bajan por el borde de una meseta hasta un estanque, y los huecos con agua con peces dentro.
 - Terreno de fondo continuo con la pista, por tramos, con colinas (verde), fábricas (industrial) o mar con islas (acuática).
 - Cordilleras de crestas con roca, estratos y nieve, con niebla atmosférica.
@@ -49,7 +50,7 @@ Funciona en el navegador del móvil Android: no hay instalación ni compilación
 
 ## Texturas
 
-Las texturas de hierba, madera, ladrillo, suelo y agua son imágenes de muestra de three.js (MIT). Ver `assets/textures/README.md`. Las demás (roca, montaña, tierra, arena, tubos, nubes, ventanas) se generan en el juego (`js/textures.js`).
+Las texturas de hierba, madera, ladrillo y suelo son imágenes de muestra de three.js (MIT). El agua (ondas, espuma y estrías de las cascadas) se genera en `js/water.js`: el entorno de desarrollo no tenía acceso a bibliotecas de texturas. Ver `assets/textures/README.md`. Las demás (roca, montaña, tierra, arena, tubos, nubes, ventanas) se generan en el juego (`js/textures.js`).
 
 ## Estructura
 

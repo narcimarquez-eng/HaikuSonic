@@ -119,6 +119,7 @@ export function buildTube(pt, T, G, zi) {
   for (let i = 0; i < count; i++) place(ribs, i, pt.L * (i + 0.5) / count);
   place(flanges, 0, 0); place(flanges, 1, pt.L);
   ribs.instanceMatrix.needsUpdate = true; flanges.instanceMatrix.needsUpdate = true;
+  if (pt.kind === 'loop') ribs.visible = false;      // en los bucles los aros cruzan el lazo y lo ensucian: solo quedan las bridas
   G.add(ribs, flanges);
   return m;
 }
@@ -159,6 +160,17 @@ function buildGallery(gl, T, zi, chunkOf) {
   for (const f of [0.3, 0.7]) mesh(G, UNIT_SPHERE, lampM, inX0 + span * f, gl.yF + 2.6, -1.7, 0.22).castShadow = false;
 }
 
+// Aro de roca alrededor de un bucle: un toro con la textura de la zona, abierto por abajo (ahí entra y sale la pista)
+function buildLoopFrame(pt, zi, T, G) {
+  const { cx, cy, R, gap } = pt.loop;
+  const geo = new THREE.TorusGeometry(R + TUBE_R + 0.35, 0.55, 12, 80, Math.PI * 2 - gap);
+  const mat = new THREE.MeshStandardMaterial({ map: tiled(zi === 1 ? T.plank : T.side, 6, 1), roughness: 0.9 });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(cx, cy, 0);
+  m.rotation.z = -Math.PI / 2 + gap / 2;             // la abertura queda abajo
+  G.add(m);
+}
+
 // Construye la pista en los grupos de cada tramo (chunkOf devuelve el grupo de una coordenada x)
 export function buildLane(lv, zi, T, chunkOf) {
   const S = lv.solids;
@@ -194,14 +206,16 @@ export function buildLane(lv, zi, T, chunkOf) {
       // Una losa solo llega hasta 4 unidades bajo la superficie: debajo está la galería.
       const bottom = s.slab ? top - 4 : -14, yTop = top - 0.5;
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, (yTop - bottom) / 4), roughness: 0.95 });
-      const edgeM = new THREE.MeshStandardMaterial({ map: tiled(T.top, w / 4, 0.25), roughness: 0.9 });
-      const topM = new THREE.MeshStandardMaterial({ map: tiled(T.top, w / 4, 1.1), roughness: 0.85 });
+      // Bajo el agua la superficie es tierra, no hierba
+      const topTex = s.wade ? T.side : T.top;
+      const edgeM = new THREE.MeshStandardMaterial({ map: tiled(topTex, w / 4, 0.25), roughness: 0.9 });
+      const topM = new THREE.MeshStandardMaterial({ map: tiled(topTex, w / 4, 1.1), roughness: 0.85 });
       addBox(G, sideM, cx, (bottom + yTop) / 2, 0, w, yTop - bottom, 4);
       addBox(G, [edgeM, edgeM, topM, sideM, edgeM, edgeM], cx, top - 0.25, 0, w, 0.5, 4.4);
       if (s.boost) {
         const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
         addBox(G, chev, cx, top + 0.03, 0, w, 0.06, 2.6);
-      } else if (zi === 0) {
+      } else if (zi === 0 && !s.wade) {
         addGrassSurf(G, { x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: () => top });
       }
     } else if (s.kind === 'slope') {
@@ -309,6 +323,7 @@ export function buildLane(lv, zi, T, chunkOf) {
 
   // Galerías y señales de bajada
   for (const gl of lv.galleries) buildGallery(gl, T, zi, chunkOf);
+  for (const pt of lv.paths) if (pt.loop) buildLoopFrame(pt, zi, T, chunkOf(pt.loop.cx));
   for (const pt of lv.paths) if (pt.kind === 'drop') buildSign(chunkOf(pt.x0 - 3), pt.x0 - 3, pt.y0 - 0.5, T);
 
   // Hierba: briznas sobre las superficies verdes (una malla por tramo)

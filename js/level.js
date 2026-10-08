@@ -78,12 +78,12 @@ export function pathAt(path, s) {
   return { P: [mx(path.pts[lo][0], path.pts[j][0]), mx(path.pts[lo][1], path.pts[j][1])], T, N: [-T[1], T[0]], K: mx(path.K[lo], path.K[j]) };
 }
 
-// Bucle: empieza y acaba en (x0, y0) con tangente horizontal
-export function loopPts(x0, y0, R) {
+// Bucle: empieza en (x0, y0) con tangente horizontal y acaba D más adelante, a la misma altura
+export function loopPts(x0, y0, R, D = 0) {
   const pts = [];
   for (let i = 0; i <= 160; i++) {
     const th = (i / 160) * 2 * Math.PI;
-    pts.push([x0 + R * Math.sin(th), y0 + R - R * Math.cos(th)]);
+    pts.push([x0 + R * Math.sin(th) + D * i / 160, y0 + R - R * Math.cos(th)]);
   }
   return pts;
 }
@@ -205,14 +205,18 @@ export function buildLevel(zi, ai) {
     x = x1;
   };
 
-  // Colinas: subidas y bajadas de rampa con un pequeño tramo plano entre ellas
+  // Colinas: subidas y bajadas de rampa, suaves o empinadas, con un pequeño tramo plano entre ellas.
+  // La zona acuática tiene un mar que no deja subir ni bajar tanto
   const hillsSec = (len) => {
-    const end = x + len;
+    const end = x + len, lo = zi === 2 ? 0 : -2, hi = zi === 2 ? 3.2 : 6;
     while (x < end - 4) {
-      const L = rnd(10, 15), nt = clamp(top + (rng() < 0.5 ? -1 : 1) * rnd(1.2, 2.2), 0, SLOPE_MAX);
+      const steep = rng() < 0.35;
+      const L = steep ? rnd(7, 10) : rnd(11, 16);
+      const rise = steep ? rnd(3.5, 5) : rnd(2.5, 4.5);
+      const nt = clamp(top + (rng() < 0.5 ? -1 : 1) * rise, lo, hi);
       if (Math.abs(nt - top) > 0.3) {
         const sl = { x0: x, x1: x + L, ya: top, yb: nt };
-        S.push({ kind: 'slope', ...sl, y0: -4, y1: Math.max(top, nt) });
+        S.push({ kind: "slope", ...sl, y0: -4, y1: Math.max(top, nt) });
         for (let i = 0; i < 4; i++) {
           const sx = x + L * (0.2 + i * 0.2);
           lv.rings.push({ x: sx, y: slopeAt(sl, sx) + 1.3, taken: false });
@@ -239,13 +243,16 @@ export function buildLevel(zi, ai) {
     x = a + g;
   };
 
-  // Bucle vertical: franja de aceleración antes para tener velocidad, y luego el tubo en lazo
+  // Bucle vertical: franja de aceleración antes para tener velocidad; el tubo entra por la pista y sale D más
+  // adelante, así se ven la entrada y la salida, y un aro de roca rodea el lazo (con la abertura abajo)
   const loopSec = () => {
-    const a = x + 6;
-    S.push({ kind: 'ground', x0: x, x1: a, y0: -4, y1: top, boost: 1 });
-    pushGround(a, a + 7, top);
-    pathRings(addPath(loopPts(a, top + 0.5, LOOP_R), 'loop'), [0.2, 0.35, 0.5, 0.65, 0.8]);
-    x = a + 7;
+    const a = x + 6, D = 3.6;
+    S.push({ kind: "ground", x0: x, x1: a, y0: -4, y1: top, boost: 1, noEnemy: true });
+    pushGround(a, a + 9, top, { noEnemy: true });
+    const pt = addPath(loopPts(a, top, LOOP_R, D), "loop");
+    pt.loop = { cx: a + D / 2, cy: top + LOOP_R, R: LOOP_R, gap: 1.25 };
+    pathRings(pt, [0.2, 0.35, 0.5, 0.65, 0.8]);
+    x = a + 9;
   };
 
   // Bajada: un tubo lleva de la superficie a una galería bajo la pista; otro tubo la devuelve arriba.
@@ -358,8 +365,8 @@ export function buildLevel(zi, ai) {
   // el fondo es una laguna poco profunda que se atraviesa chapoteando.
   const dipSec = () => {
     if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
-    const D = zi === 2 ? 2.2 : rnd(5.5, 7);
-    const Ld = rnd(14, 18), Lf = rnd(8, 12), Lu = rnd(14, 18);
+    const D = zi === 2 ? 2.2 : rnd(6, 8);
+    const Ld = rnd(12, 15), Lf = rnd(8, 12), Lu = rnd(12, 15);
     const x0 = x, fl = top - D, xf = x0 + Ld, xu = xf + Lf;
     S.push({ kind: 'slope', x0, x1: xf, ya: top, yb: fl, y0: -4, y1: top });
     if (zi === 2) S.push({ kind: 'ground', x0: xf, x1: xu, y0: -4, y1: fl, wade: true, wl: fl + 0.8 });
@@ -426,5 +433,40 @@ export function buildLevel(zi, ai) {
   pushGround(x, x + 40, top);
   lv.goalX = x + 12; lv.goalY = top;
   lv.endX = x + 40;
+  // Reparto de enemigos: cada tramo de 100 unidades tiene al menos dos, sobre la pista llana y lejos de trampas
+  const placeEnemy = (type, ex, s, r) => {
+    const y = s.y1, dir = r() < 0.5 ? -1 : 1, phase = r() * 6;
+    const base = { x: ex, minX: Math.max(s.x0 + 2, ex - 4), maxX: Math.min(s.x1 - 3, ex + 4), dir, y, phase, alive: true, inv: 0, r: 0.5 };
+    switch (type) {
+      case "fly": return { ...base, type, base: y + 1.8 + r() * 0.6, y: y + 2, speed: 2.4 + r() * 0.6 };
+      case "wasp": return { ...base, type, minX: ex - 6, maxX: ex + 6, r: 0.45, base: y + 2.2 + r(), y: y + 2.6, mode: "patrol", diveT: 0, cd: 1 + r() * 2 };
+      case "hop": return { ...base, type, cd: 0.5 + r() * 1.5, air: false, yv: 0, hv: 0 };
+      case "spiny": return { ...base, type, spiky: true, speed: 1.6 + r() * 0.6 };
+      case "shoot": return { type, x: ex, minX: ex, maxX: ex, dir: -1, speed: 0, y, cd: 1 + r() * 1.5, phase: 0, alive: true, inv: 0, r: 0.5 };
+      default: return base;
+    }
+  };
+  const boss = lv.enemies.find((e) => e.type === "boss");
+  const stopX = Math.min(lv.goalX - 50, boss ? boss.minX - 12 : Infinity);
+  // Sobre el suelo: tramos llanos de al menos 6 unidades; los voladores pueden ir en cualquier sitio sin trampas
+  const flat = S.filter((q) => q.kind === "ground" && !q.wade && !q.gallery && !q.slab && !q.noEnemy && q.x1 - q.x0 >= 6);
+  const traps = S.filter((q) => ["spikes", "water", "spring", "block"].includes(q.kind));
+  const trapNear = (x0, x1) => traps.some((h) => h.x1 > x0 - 3 && h.x0 < x1 + 3) || lv.checkpoints.some((c) => c.x > x0 - 4 && c.x < x1 + 4);
+  const enemyNear = (ex) => lv.enemies.some((e) => Math.abs(e.x - ex) < 9);
+  for (let c = 60; c < stopX; c += 100) {
+    const cEnd = Math.min(c + 100, stopX);
+    for (let tries = 0, have = lv.enemies.filter((e) => e.x >= c && e.x < cEnd).length; have < 2 && tries < 80; tries++) {
+      const ex = c + (cEnd - c) * rng();
+      const type = pickWeighted({ walk: 4, fly: prof.fly * 6, wasp: prof.wasp * 5, hop: prof.hop * 8, spiny: prof.spiny * 8, shoot: prof.shoot * 8 }, rng);
+      const flying = type === "fly" || type === "wasp";
+      const s = flat.find((q) => ex >= q.x0 + 3 && ex <= q.x1 - 3);
+      if (!flying && !s) continue;
+      if (type === "shoot" && (!s || ex - s.x0 < 16)) continue;
+      if (enemyNear(ex) || trapNear(ex - 4, ex + 4)) continue;
+      const seg = flying ? { x0: ex - 4, x1: ex + 4, y1: laneY(S, ex) } : s;
+      lv.enemies.push(placeEnemy(type, ex, seg, rng));
+      have++;
+    }
+  }
   return lv;
 }
