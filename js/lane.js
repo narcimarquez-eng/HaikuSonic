@@ -125,12 +125,11 @@ export function buildTube(pt, T, G, zi) {
 }
 
 // Señal de bajada: poste de acero y placa con una flecha hacia abajo
-function buildSign(G, x, y, T, up = false) {
+function buildSign(G, x, y, T) {
   const steel = new THREE.MeshStandardMaterial({ color: 0x8a949c, roughness: 0.4, metalness: 0.7 });
   addBox(G, steel, x, y + 1.1, 0.2, 0.14, 2.2, 0.14);
   const plateM = new THREE.MeshStandardMaterial({ map: T.arrowDown, emissive: 0xffffff, emissiveMap: T.arrowDown, emissiveIntensity: 0.35, roughness: 0.6 });
   const plate = mesh(G, new THREE.PlaneGeometry(1.5, 1.5), plateM, x, y + 2.5, 0.25);
-  plate.rotation.z = up ? Math.PI : 0;                // flecha hacia arriba (entrada de la cámara) o hacia abajo
   plate.castShadow = false;
 }
 
@@ -238,7 +237,7 @@ export function buildLane(lv, zi, T, chunkOf) {
       }
       // La tierra queda 0.5 por debajo de la hierba para no compartir plano (evita destellos).
       // Una losa solo llega hasta 4 unidades bajo la superficie: debajo está la galería.
-      // La losa agrietada (secreta) es roca morada, solo hasta 4 bajo la pista; sus mallas se ocultan al romperse
+      // La losa agrietada (secreta) se ve como la pista, con unas grietas finas; sus mallas se ocultan al romperse
       const crack = !!s.crack;
       const bottom = s.slab || crack ? top - 4 : -14, yTop = top - 0.5;
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, (yTop - bottom) / 4), roughness: 0.95 });
@@ -246,10 +245,13 @@ export function buildLane(lv, zi, T, chunkOf) {
       const topTex = s.wade ? T.side : T.top;
       const edgeM = new THREE.MeshStandardMaterial({ map: tiled(topTex, w / 4, 0.25), roughness: 0.9 });
       const topM = new THREE.MeshStandardMaterial({ map: tiled(topTex, w / 4, 1.1), roughness: 0.85 });
-      const crackM = crack ? new THREE.MeshStandardMaterial({ map: tiled(T.rock, w / 3, 1), color: 0x9a86b4, emissive: 0x2a1040, roughness: 0.9 }) : null;
       const boxes = [addBox(G, sideM, cx, (bottom + yTop) / 2, 0, w, yTop - bottom, 4)];
-      boxes.push(addBox(G, crack ? crackM : [edgeM, edgeM, topM, sideM, edgeM, edgeM], cx, top - 0.25, 0, w, 0.5, 4.4));
-      if (crack) s.meshes = boxes;
+      boxes.push(addBox(G, [edgeM, edgeM, topM, sideM, edgeM, edgeM], cx, top - 0.25, 0, w, 0.5, 4.4));
+      if (crack) {
+        const seamM = new THREE.MeshStandardMaterial({ color: 0x3b2e22, roughness: 1 });
+        for (const f of [0.25, 0.7]) boxes.push(addBox(G, seamM, cx - w / 2 + w * f, top + 0.02, 0, 0.07, 0.03, 4.5));
+        s.meshes = boxes;
+      }
       if (s.boost) {
         const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
         addBox(G, chev, cx, top + 0.03, 0, w, 0.06, 2.6);
@@ -322,7 +324,8 @@ export function buildLane(lv, zi, T, chunkOf) {
       // Suelo, techo o muro de una cámara oculta: bloque de roca; con sup, pilares hasta la plataforma de abajo
       const cx = (s.x0 + s.x1) / 2, G = chunkOf(cx), w = s.x1 - s.x0, h = s.y1 - s.y0;
       const wallM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, w / 3, h / 3), roughness: 0.9 });
-      addBox(G, wallM, cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
+      const wallBox = addBox(G, wallM, cx, (s.y0 + s.y1) / 2, 0, w, h, 2.4);
+      if (s.breakable) s.meshes = [wallBox];
       if (s.sup) for (const px of [s.x0 + 0.5, s.x1 - 0.5]) addBox(G, wallM, px, (s.sup + s.y0) / 2, -1.2, 0.55, s.y0 - s.sup, 0.55);
     } else if (s.kind === 'platform') {
       const cx = (s.x0 + s.x1) / 2, w = s.x1 - s.x0, h = s.y1 - s.y0, G = chunkOf(cx);
@@ -369,9 +372,6 @@ export function buildLane(lv, zi, T, chunkOf) {
   for (const gl of lv.galleries) buildGallery(gl, T, zi, chunkOf);
   for (const pt of lv.paths) if (pt.loop) buildLoopFrame(pt, zi, T, chunkOf(pt.loop.cx));
   for (const pt of lv.paths) if (pt.kind === 'drop') buildSign(chunkOf(pt.x0 - 3), pt.x0 - 3, pt.y0 - 0.5, T);
-  // Señales de las secretas: bajar sobre la losa agrietada (flecha abajo) y entrar rodando al tubo de la cámara (arriba)
-  for (const s of S) if (s.crack) buildSign(chunkOf(s.x0 - 3), s.x0 - 3, s.y1, T);
-  for (const pt of lv.paths) if (pt.kind === 'rise' && pt.secret) buildSign(chunkOf(pt.x0 - 3), pt.x0 - 3, pt.y0 - 0.5, T, true);
 
   // Hierba: briznas sobre las superficies verdes (una malla por tramo)
   for (const [G, surfs] of grass) addGrass(G, surfs, 4, rnd, true);

@@ -202,6 +202,7 @@ function resolveX(p, solids, prevX) {
     if (s.kind === 'platform' || s.kind === 'ceiling' || s.kind === 'spikes' || s.kind === 'water') continue;
     if (top <= s.y0 + EPS || bottom >= s.y1 - STEP_UP) continue;
     if (right <= s.x0 || left >= s.x1) continue;
+    if (s.breakable && p.rolling) { breakCrack(s); continue; }   // pared de roca: rodando contra ella se rompe
     if (s.kind === 'slope') {
       // Una pared muy empinada detiene al jugador; un escalón de hasta WALL_LIFT se sube
       if (bottom < slopeMax(s, p) - WALL_LIFT) { p.x = prevX; p.vx = 0; p.dashT = 0; p.charge = 0; }
@@ -353,8 +354,15 @@ function stepPlayer(dt) {
     p.vy = clamp(p.vx * p.ramp.g, -MAX_FALL, LAUNCH_MAX);
   }
   if (p.grounded && p.groundSolid && p.groundSolid.kind === 'slope') {
-    const sl = p.groundSolid;
-    p.ramp = { g: (sl.yb - sl.ya) / (sl.x1 - sl.x0), x: p.x };
+    const sl = p.groundSolid, g = (sl.yb - sl.ya) / (sl.x1 - sl.x0);
+    // Cresta: tras una subida empinada, un descenso empinado que empieza enseguida despega a buena velocidad (un
+    // borde así no se pega a la pendiente): sale por la tangente de la subida
+    if (g < -1.2 && p.ramp && p.ramp.g > 1.2 && p.x - p.ramp.x < 4.5 && p.vx > 8) {
+      p.grounded = false; p.groundSolid = null;
+      p.vy = clamp(p.vx * p.ramp.g, -MAX_FALL, LAUNCH_MAX);
+    } else {
+      p.ramp = { g, x: p.x };
+    }
   }
   // Losa agrietada: rodando sobre ella se hunde y el jugador cae a la galería (andando la cruza sin caer)
   if (p.grounded && p.groundSolid && p.groundSolid.crack && p.rolling) {
@@ -380,7 +388,8 @@ function stepPlayer(dt) {
   // (el techo de la galería corta los saltos, así que un salto sobre la boca no deja al jugador en el vacío)
   if (p.vx > 0) {
     for (const pt of lv.paths) {
-      const onBase = p.grounded || (pt.kind === 'rise' && p.y - PH / 2 < pt.y0 + 1.5);
+      // Un salto sobre la boca de una subida también entra (el salto no llega a 3.2): no se queda al otro lado
+      const onBase = p.grounded || (pt.kind === 'rise' && p.y - PH / 2 < pt.y0 + 3.2);
       if (onBase && prevX < pt.x0 && p.x >= pt.x0 && (!pt.secret || p.rolling)) {
         p.path = pt; p.s = 0; p.pv = p.vx;
         p.x = pt.x0; p.y = pt.y0 + 0.5;
