@@ -129,7 +129,7 @@ export function beamOf(e, lv) {
 
 // Qué pasa cuando el jugador toca al enemigo e (f = { stomp, roll, spin, star }):
 // 'kill' lo destruye; 'defuse' lo desarma sin explosión; 'blast' hace explotar una bomba armada; 'bounce' rebota al
-// jugador sin daño; 'hurt' daña al jugador; 'ignore' no toca (la araña colgada)
+// jugador sin daño; 'hurt' daña al jugador; 'ignore' no toca (la araña colgada y la mosca que vuelve de un picado)
 export function verdict(e, p, f) {
   const hit = f.stomp || f.roll || f.spin;
   if (e.type === 'bomb' && e.st === 'fuse') return 'blast';
@@ -139,7 +139,8 @@ export function verdict(e, p, f) {
   if (e.type === 'charger' && e.st === 'stun') return 'kill';
   if (e.type === 'shield' && !f.stomp && !f.star && Math.sign(p.x - e.x) === e.dir) return 'bounce';   // su escudo mira al jugador
   if (e.type === 'bomb') return hit ? 'defuse' : 'hurt';
-  if (e.type === 'wasp' && e.mode === 'dive') return hit ? 'kill' : 'hurt';   // solo pica en picado
+  if (e.type === 'housefly' && e.mode === 'back') return 'ignore';                      // la mosca que vuelve de un picado no toca (no rebota al jugador)
+  if (FLYER_TYPES.includes(e.type) && e.mode === 'dive') return hit ? 'kill' : 'hurt';   // los voladores en picado pican
   if (FLYER_TYPES.includes(e.type)) return hit ? 'kill' : 'bounce';           // los voladores no hieren por tocarlos
   return hit ? 'kill' : 'hurt';
 }

@@ -107,7 +107,8 @@ function wasp(e, lv, dt) {
   e.y = e.base + Math.sin(lv.t * 3 + e.phase) * 0.5;
   e.cd -= dt;
   if (e.cd <= 0 && Math.abs(p.x - e.x) < 9 && p.y < e.y + 1.5 && p.y > e.y - 6) {
-    e.mode = 'dive'; e.tx = p.x; e.ty = p.y + 0.5; e.diveT = 1.3; e.cd = 3.2;
+    // El contacto de la avispa queda r (0.6) por encima de su centro: apuntar 0.5 sobre el jugador no la toca nunca
+    e.mode = 'dive'; e.tx = p.x; e.ty = p.y - 0.5; e.diveT = 1.3; e.cd = 2.4;
   }
 }
 
@@ -138,15 +139,40 @@ function fish(e, dt) {
   }
 }
 
-// Mosca doméstica: vuela en círculos pequeños y rápidos sobre un punto que patrulla por el tramo
+// Mosca doméstica: vuela en círculos pequeños y rápidos sobre un punto que patrulla por el tramo. Si el jugador está
+// debajo y cerca en horizontal, de vez en cuando se lanza en picado a donde está (su contacto la hiere) y vuelve a órbita
 function housefly(e, lv, dt) {
+  const p = player, a = lv.t * 7 + e.phase;
+  if (e.mode === 'dive') {
+    const dx = e.tx - e.x, dy = e.ty - e.y, L = Math.hypot(dx, dy) || 1;
+    e.x += dx / L * 11 * dt; e.y += dy / L * 11 * dt;
+    e.face = dx < 0 ? -1 : 1;
+    e.diveT -= dt;
+    if (L < 0.4 || e.diveT <= 0) e.mode = 'back';
+    return;
+  }
+  if (e.mode === 'back') {                         // vuelve a la órbita; al llegar a ella sigue patrullando sin saltos
+    const tx = e.ax + Math.cos(a) * 0.7, ty = e.base + Math.sin(2 * a) * 0.25;
+    const dx = tx - e.x, dy = ty - e.y, L = Math.hypot(dx, dy);
+    if (L <= 9 * dt) { e.x = tx; e.y = ty; e.mode = 'patrol'; }
+    else { e.x += dx / L * 9 * dt; e.y += dy / L * 9 * dt; }
+    e.face = dx < 0 ? -1 : 1;
+    return;
+  }
   e.ax += e.dir * e.speed * dt;
   if (e.ax < e.minX) { e.ax = e.minX; e.dir = 1; }
   if (e.ax > e.maxX) { e.ax = e.maxX; e.dir = -1; }
-  const a = lv.t * 7 + e.phase;
   e.x = e.ax + Math.cos(a) * 0.7;
   e.y = e.base + Math.sin(2 * a) * 0.25;
   e.face = e.dir;
+  // Picado: el enfriamiento corre con el jugador a tiro; fuera de tiro no baja de 1 s, así que la primera picada llega ~1 s después
+  const near = Math.abs(p.x - e.x) <= 7 && p.y < e.y && p.y > e.y - 6;
+  e.cd = (e.cd ?? 1.5) - dt;
+  if (!near) { e.cd = Math.max(e.cd, 1.0); return; }
+  if (e.cd <= 0) {
+    // El contacto del dron queda r por encima de su origen: apuntar 0.5 bajo el jugador hace que lo alcance aunque frene antes
+    e.mode = 'dive'; e.tx = p.x; e.ty = p.y - 0.5; e.diveT = 1.2; e.cd = 3.5;
+  }
 }
 
 // Gusano: asoma del suelo, se queda un rato y se vuelve a hundir. Solo toca cuando está fuera (up ≥ 0.5)
@@ -174,11 +200,22 @@ function fire(e, lv, dt) {
   }
 }
 
+// Dron volador: si el jugador está a su alcance (rx en horizontal, ry en vertical), dispara un proyectil dirigido cada
+// `every` segundos. Fuera de alcance el enfriamiento no baja de 1 s, así que el primer disparo llega ~1 s después de verlo
+function flyerShoot(e, lv, dt, rx, ry, speed, every) {
+  const p = player;
+  if (e.shootCd === undefined) e.shootCd = 1.0;
+  if (Math.abs(p.x - e.x) > rx || Math.abs(p.y - e.y) > ry) { e.shootCd = Math.max(e.shootCd - dt, 1.0); return; }
+  if ((e.shootCd -= dt) > 0) return;
+  aim(lv, e.x, e.y, speed, 0);
+  e.shootCd = every;
+}
+
 // Movimiento de cada tipo de enemigo
 function moveEnemy(e, lv, dt) {
   e.inv = Math.max(0, (e.inv || 0) - dt);
   switch (e.type) {
-    case 'fly': e.y = e.base + Math.sin(lv.t * 2.2 + e.phase) * 0.7; patrol(e, e.speed, dt); break;
+    case 'fly': e.y = e.base + Math.sin(lv.t * 2.2 + e.phase) * 0.7; patrol(e, e.speed, dt); flyerShoot(e, lv, dt, 11, 9, 7.5, 2.6); break;
     case 'wasp': wasp(e, lv, dt); break;
     case 'hop': hop(e, lv, dt); break;
     case 'fish': fish(e, dt); break;
@@ -186,8 +223,12 @@ function moveEnemy(e, lv, dt) {
     case 'worm': worm(e, dt); break;
     case 'shoot': patrol(e, 0, dt); fire(e, lv, dt); break;
     case 'boss': patrol(e, e.speed, dt); fire(e, lv, dt); break;
-    case 'shield': case 'bomb': case 'spider': case 'charger': case 'laser': case 'support':
+    case 'shield': case 'bomb': case 'spider': case 'charger': case 'laser':
       stepBot(e, lv, dt, lv.t, player);
+      break;
+    case 'support':                                      // dron de apoyo: escudo y patrulla (stepBot) y un disparo lento
+      stepBot(e, lv, dt, lv.t, player);
+      flyerShoot(e, lv, dt, 9, 8, 5, 3.4);
       break;
     default: patrol(e, e.speed ?? 2.2, dt);        // caminantes y erizos
   }
