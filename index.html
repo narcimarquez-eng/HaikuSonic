@@ -19,6 +19,22 @@
     position: fixed; inset: 0; pointer-events: none;
     background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, .38) 100%);
   }
+  /* Líneas de velocidad: rayos claros en los bordes, su opacidad la fija main.js según la velocidad */
+  #speedfx {
+    position: fixed; inset: -10%; pointer-events: none; opacity: 0; transition: opacity .15s linear;
+    background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(255, 255, 255, .55) 0deg .6deg, transparent .6deg 7deg);
+    -webkit-mask-image: radial-gradient(ellipse at center, transparent 48%, #000 78%);
+    mask-image: radial-gradient(ellipse at center, transparent 48%, #000 78%);
+    animation: speedspin 0.35s steps(3) infinite;
+  }
+  @keyframes speedspin { from { transform: rotate(0deg); } to { transform: rotate(3deg); } }
+  /* Textos flotantes: puntos de los enemigos encadenados y 1UP */
+  #popups { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .popup {
+    position: absolute; left: 0; top: 0; font-weight: 900; font-style: italic; font-size: clamp(16px, 4vmin, 24px);
+    color: #fff; text-shadow: 0 2px 0 #1b3a7a, 0 0 10px rgba(80, 160, 255, .8); white-space: nowrap; will-change: transform;
+  }
+  .popup.big { color: var(--gold); font-size: clamp(22px, 6vmin, 36px); text-shadow: 0 3px 0 #8a4b00, 0 0 14px rgba(255, 200, 40, .9); }
 
   /* HUD */
   #hud {
@@ -33,7 +49,10 @@
     font-size: clamp(13px, 3.5vmin, 19px); line-height: 1.35; white-space: nowrap;
   }
   .chip .lbl { font-size: .62em; letter-spacing: .12em; opacity: .75; margin-right: 6px; }
-  .chip .ring { color: var(--gold); }
+  .chip .ring { color: var(--gold); display: inline-block; }
+  .chip .ring.bump { animation: bump .18s ease-out; }
+  @keyframes bump { 0% { transform: scale(1.45); } 100% { transform: scale(1); } }
+  #mute { pointer-events: auto; cursor: pointer; font: inherit; color: inherit; font-size: clamp(14px, 3.8vmin, 20px); padding: 3px 10px; }
   #zone { font-size: clamp(12px, 3vmin, 16px); letter-spacing: .04em; }
   .col { display: flex; flex-direction: column; gap: 6px; }
   .col.right { align-items: flex-end; }
@@ -96,7 +115,9 @@
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="speedfx"></div>
 <div id="vignette"></div>
+<div id="popups"></div>
 
 <div id="hud">
   <div class="col">
@@ -109,6 +130,7 @@
   <div class="col right">
     <div class="chip"><span id="time">0:00</span></div>
     <div class="chip"><span class="lbl">PUNTOS</span><span id="score">0</span></div>
+    <button class="chip" id="mute" aria-label="Sonido">🔊</button>
   </div>
 </div>
 
@@ -121,7 +143,7 @@
 <div id="title" class="overlay">
   <h1>HaikuSonic</h1>
   <p>Plataformas 2.5D · 3 zonas × 3 actos</p>
-  <p>Joystick: moverse · SALTAR: saltar · SPIN: mantén para cargar y suelta para arrancar. Mantén abajo mientras corres para rodar. En el aire, SPIN te lanza hacia abajo. Las franjas con flechas aceleran; los tubos verticales se recorren por dentro a toda velocidad.</p>
+  <p>Joystick: moverse · SALTAR: saltar · SPIN: mantén para cargar y suelta para arrancar. Mantén abajo mientras corres para rodar. En el aire, SPIN te lanza hacia abajo. Las franjas con flechas aceleran: corre por ellas hacia los bucles. Dentro de un tubo, empuja hacia delante para ir más rápido. Encadena enemigos sin tocar el suelo para multiplicar los puntos. Tecla M o 🔊: sonido.</p>
   <button id="btnPlay">JUGAR</button>
 </div>
 

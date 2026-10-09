@@ -181,7 +181,7 @@ const _b = new THREE.Matrix4(), _m = new THREE.Matrix4(), _t = new THREE.Matrix4
 export function updateEntities(E, lv, t, dt) {
   const m = _m;
   lv.rings.forEach((r, i) => {
-    _pos.set(r.x, r.y, 0); _q.setFromEuler(_eul.set(0, t * 3 + i * 0.4, 0));
+    _pos.set(r.x, r.y, r.z || 0); _q.setFromEuler(_eul.set(0, t * 3 + i * 0.4, 0));
     _sc.setScalar(r.taken ? 0 : 1);
     E.ringIM.setMatrixAt(i, m.compose(_pos, _q, _sc));
   });

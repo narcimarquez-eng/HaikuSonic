@@ -27,6 +27,11 @@ const POWER_T = 10;               // segundos de zapatillas y de estrella
 const SPEED_MUL = 1.35;           // multiplicador de velocidad máxima con zapatillas
 const LAUNCH_MAX = 26;            // velocidad vertical máxima al salir volando por el labio de un arco
 const LIP_VY = 13;               // velocidad vertical mínima en el labio para despegar; por debajo, sigue por la pista
+const TUBE_ACCEL = 10;            // dentro de un tubo, empujar hacia delante acelera (y hacia atrás frena)
+const TUBE_MAX = 44;              // velocidad máxima dentro de un tubo
+const LOOP_MIN = 14;              // en un bucle, quien entra hacia delante no baja de esta velocidad: siempre da la vuelta
+const DIVE_BREAK = -16;           // un picado que cae sobre una losa agrietada a esta velocidad (o más) también la rompe
+const CHAIN_PTS = [100, 200, 500, 1000];   // puntos por enemigo encadenado sin tocar el suelo (o rodando sin parar)
 
 // Estado del jugador (se reinicia en cada fase)
 export const player = {
@@ -36,6 +41,7 @@ export const player = {
   path: null, s: 0, pv: 0, wet: false, splashT: 0,
   arc: null, kArc: 1, gArc: 0,         // arco que se está subiendo, √(1+g²) y pendiente en su último paso
   shield: false, speedT: 0, starT: 0,   // potenciadores activos: escudo (un golpe), zapatillas y estrella (segundos)
+  chain: 0,                             // enemigos destruidos seguidos (en el aire o rodando): cada uno vale más
 };
 
 // Estado de la partida; main.js fija onComplete y onGameOver
@@ -44,6 +50,10 @@ export const G = {
   checkpoint: { x: 0, y: 2 }, onComplete: null, onGameOver: null,
   secretsFound: 0, onSecret: null,   // zonas secretas de la fase encontradas y aviso al encontrar una
   fx: [],                           // efectos pendientes (chispas, salpicaduras): main.js los convierte en partículas
+  sfx: [],                          // sonidos pendientes (nombres de audio.js): main.js los reproduce
+  popups: [],                       // textos flotantes pendientes ({ x, y, text }): puntos de los enemigos encadenados
+  dust: [],                         // polvo pendiente ({ x, y, n, dir }): aterrizajes, derrapes y spin dash
+  shake: 0,                         // sacudida de cámara pendiente (se suma y main.js la consume)
 };
 
 const slopeMax = (s, p) => Math.max(slopeAt(s, p.x - PW / 2), slopeAt(s, p.x + PW / 2));
@@ -56,8 +66,14 @@ function hitEnemy(e, y) {
     if (e.hp > 0) return;
     for (let i = 0; i < 5; i++) G.fx.push({ x: e.x + (i - 2) * 0.9, y: y + (i % 2) * 0.8 });
     G.score += 1000;
+    G.popups.push({ x: e.x, y: y + 1, text: '1000', big: true });
+    G.sfx.push('boom'); G.shake += 0.6;
   } else {
-    G.score += 100;
+    const pts = CHAIN_PTS[Math.min(player.chain, CHAIN_PTS.length - 1)];
+    player.chain++;
+    G.score += pts;
+    G.popups.push({ x: e.x, y: y + 0.6, text: String(pts), big: pts >= 500 });
+    G.sfx.push('pop'); G.shake += 0.12;
   }
   e.alive = false;
   G.fx.push({ x: e.x, y });
@@ -65,6 +81,7 @@ function hitEnemy(e, y) {
 
 // Rebote del jugador al tocar un enemigo sin destruirlo: arriba si lo pisa, de lado si lo toca
 function knock(e, p, stomp) {
+  G.sfx.push('bump');
   if (stomp) { p.vy = 10; p.grounded = false; p.groundSolid = null; return; }
   p.vx = (p.x >= e.x ? 1 : -1) * 7; p.vy = Math.max(p.vy, 5);
   p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0;
@@ -248,8 +265,14 @@ function resolveX(p, solids, prevX) {
     if (right <= s.x0 || left >= s.x1) continue;
     if (s.breakable && p.rolling) { breakCrack(s); continue; }   // pared de roca: rodando contra ella se rompe
     if (s.kind === 'slope') {
-      // Una pared muy empinada detiene al jugador; un escalón de hasta WALL_LIFT se sube
-      if (bottom < slopeMax(s, p) - WALL_LIFT) { p.x = prevX; p.vx = 0; p.dashT = 0; p.charge = 0; }
+      // Un escalón de hasta WALL_LIFT se sube. Más hondo: si ya estaba sobre la rampa (un salto que se mete en la
+      // subida de un valle), sale a su superficie, porque bajo ella no hay nada que lo sujete y caería a través de la
+      // tierra; si llega de lado por su borde, la pared lo detiene
+      const surf = slopeMax(s, p);
+      if (bottom < surf - WALL_LIFT) {
+        if (prevX + PW / 2 > s.x0 && prevX - PW / 2 < s.x1) { p.y = surf + PH / 2; p.vy = Math.max(p.vy, 0); }
+        else { p.x = prevX; p.vx = 0; p.dashT = 0; p.charge = 0; }
+      }
       continue;
     }
     if (s.kind === 'spring') continue;          // un muelle no bloquea: se pisa y lanza (resolveY)
@@ -269,6 +292,7 @@ function resolveY(p, solids, prevBottom) {
       // Un muelle se activa al pisarlo (de frente o al caer encima) y lanza sin frenar la velocidad horizontal
       const bottom = p.y - PH / 2;
       if (p.vy <= 0.5 && bottom < s.y1 + 0.02 && bottom > s.y0 - 0.25) {
+        if (!(s.squash > 0)) G.sfx.push('spring');
         p.y = s.y1 + PH / 2; p.vy = s.power; p.grounded = false; p.groundSolid = null; p.jumping = false;
         p.vx = clamp(p.vx, -SPRING_VX, SPRING_VX);
         p.spinAir = true;                       // el vuelo es un salto: el giro en el aire también destruye
@@ -288,7 +312,8 @@ function resolveY(p, solids, prevBottom) {
     const reach = slope ? 0.3 : 0;
     // Aterriza sólo si los pies estaban por encima de la superficie en el paso anterior;
     // en rampas también sube al jugador si ha entrado de lado por debajo de la superficie
-    const inside = p.vy <= 0 && bottom < surf && bottom > surf - (slope ? 1.2 : STEP_UP);
+    // (y en la pista tras el labio de un arco, que no frena de lado: quien salta desde la curva llega algo por debajo)
+    const inside = p.vy <= 0 && bottom < surf && bottom > surf - (slope || s.arcEnd ? 1.2 : STEP_UP);
     if ((p.vy <= 0 && prevBottom >= surf - tol && bottom < surf + reach) || inside) {
       p.y = surf + PH / 2;
       p.vy = 0; p.grounded = true; p.groundSolid = s;
@@ -301,6 +326,12 @@ function pathStep(dt) {
   const p = player, pt = p.path;
   const q = pathAt(pt, p.s);
   p.pv += -GRAVITY * q.T[1] * dt;
+  // Mando dentro del tubo: todos van de izquierda a derecha, así que empujar a la derecha acelera hacia la salida y a
+  // la izquierda frena (o hace volver)
+  const ax = readAxisX();
+  if (Math.abs(ax) > 0.1) p.pv += ax * TUBE_ACCEL * dt;
+  if (pt.kind === 'loop' && p.loopFwd) p.pv = Math.max(p.pv, LOOP_MIN);   // el bucle siempre se completa
+  p.pv = clamp(p.pv, -TUBE_MAX, TUBE_MAX);
   p.s += p.pv * dt;
   if (p.s >= pt.L || p.s <= 0) {                        // sale por un extremo: vuelve a la pista
     const last = p.s >= pt.L;
@@ -334,7 +365,8 @@ function arcStep(p, s, dt) {
 
 // Entrada a un tubo: el jugador lo recorre con la velocidad pv a lo largo de su trayectoria
 function enterTube(p, pt, pv) {
-  p.path = pt; p.s = 0; p.pv = pv;
+  p.path = pt; p.s = 0; p.pv = pv; p.loopFwd = pt.kind === 'loop' && pv > 4;
+  G.sfx.push(pt.kind === 'loop' ? 'loop' : 'tube');
   p.x = pt.x0; p.y = pt.y0 + 0.5;
   p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
   p.arc = null; p.kArc = 1;
@@ -345,6 +377,8 @@ function breakCrack(s) {
   s.broken = true;
   if (s.meshes) for (const m of s.meshes) m.visible = false;
   G.fx.push({ x: (s.x0 + s.x1) / 2, y: s.y1, n: 16, pal: 0 });
+  G.dust.push({ x: (s.x0 + s.x1) / 2, y: s.y1, n: 14, dir: 0 });
+  G.sfx.push('crack'); G.shake += 0.35;
 }
 
 function stepPlayer(dt) {
@@ -361,22 +395,28 @@ function stepPlayer(dt) {
   // Salto (altura variable: soltar pronto corta el salto)
   if (input.jumpPressed) {
     input.jumpPressed = false;
-    if (p.grounded) { p.vy = JUMP_V; p.grounded = false; p.groundSolid = null; p.jumping = true; p.spinAir = true; p.crouch = false; }
+    if (p.grounded) { p.vy = JUMP_V; p.grounded = false; p.groundSolid = null; p.jumping = true; p.spinAir = true; p.crouch = false; G.sfx.push('jump'); }
   }
   if (p.jumping && p.vy > 0 && !isJumpHeld()) { p.vy *= 0.5; p.jumping = false; }
 
   // SPIN en el aire = picado
   if (input.spinPressed) {
     input.spinPressed = false;
-    if (!p.grounded) p.vy = Math.min(p.vy, -20);
+    if (!p.grounded) { p.vy = Math.min(p.vy, -20); G.sfx.push('dive'); }
+    else if (p.crouch) G.sfx.push('charge');                    // cada pulsación cargando el spin dash suena más aguda
   }
 
   // Spin dash: cargar parado y soltar
   if (p.grounded) {
-    if (down && Math.abs(p.vx) < 1.5) { p.crouch = true; p.charge = Math.min(1, p.charge + dt); }
-    else if (p.crouch && !down) {
+    if (down && Math.abs(p.vx) < 1.5) {
+      if (!p.crouch) G.sfx.push('charge');
+      p.crouch = true; p.charge = Math.min(1, p.charge + dt);
+    } else if (p.crouch && !down) {
       p.crouch = false;
-      if (p.charge > 0.05) { p.vx = p.facing * (DASH_MIN + DASH_RANGE * p.charge); p.dashT = 0.5; }
+      if (p.charge > 0.05) {
+        p.vx = p.facing * (DASH_MIN + DASH_RANGE * p.charge); p.dashT = 0.5;
+        G.sfx.push('dash'); G.dust.push({ x: p.x - p.facing * 0.4, y: p.y - PH / 2, n: 10, dir: -p.facing });
+      }
       p.charge = 0;
     }
   } else { p.crouch = false; p.charge = 0; }
@@ -393,6 +433,9 @@ function stepPlayer(dt) {
     if (p.crouch) p.vx = approach(p.vx, 0, 30 * dt);
     else if (Math.abs(ax) > 0.1) {
       const reversing = Math.sign(ax) !== Math.sign(p.vx) && Math.abs(p.vx) > 1;
+      if (reversing && Math.abs(p.vx) > 10 && Math.random() < dt * 30) G.dust.push({ x: p.x, y: p.y - PH / 2, n: 1, dir: Math.sign(p.vx) });
+      if (reversing && Math.abs(p.vx) > 10 && !p.skid) { p.skid = true; G.sfx.push('skid'); }
+      if (!reversing) p.skid = false;
       if (!reversing && Math.abs(p.vx) > TOP_SPEED * k) p.vx = approach(p.vx, Math.sign(p.vx) * TOP_SPEED * k, OVER_DRAG * dt);
       else p.vx = approach(p.vx, ax * TOP_SPEED * k, (reversing ? ACCEL * 2.5 : ACCEL) * dt);
     } else {
@@ -415,9 +458,13 @@ function stepPlayer(dt) {
   const prevX = p.x;
   p.x += p.vx * dt;
   resolveX(p, lv.solids, prevX);
-  const prevBottom = p.y - PH / 2;
+  const prevBottom = p.y - PH / 2, wasAir = !p.grounded, fallV = p.vy;
   p.y += p.vy * dt;
   resolveY(p, lv.solids, prevBottom);
+  if (wasAir && p.grounded) {                                // aterrizaje fuerte: polvo, golpe seco y, si es muy fuerte, sacudida
+    if (fallV < -18) { G.dust.push({ x: p.x, y: p.y - PH / 2, n: 8, dir: 0 }); G.sfx.push('land'); }
+    if (fallV < -36) G.shake += 0.25;
+  }
   // Fin de un arco: la velocidad que llevaba sobre la curva pasa a la pista llana (no se pierde). Si va rápido, el
   // labio la lanza hacia arriba por su tangente (vy = vx · pendiente del labio); si no, sigue por la pista. Fuera de la
   // curva y en el aire (salto o caída) solo se olvida el arco
@@ -430,16 +477,20 @@ function stepPlayer(dt) {
     p.arc = null; p.kArc = 1;
   }
   // Losa agrietada: rodando sobre ella se hunde y el jugador cae a la galería (andando la cruza sin caer)
-  if (p.grounded && p.groundSolid && p.groundSolid.crack && p.rolling) {
+  if (p.grounded && p.groundSolid && p.groundSolid.crack && (p.rolling || (wasAir && fallV <= DIVE_BREAK))) {
     breakCrack(p.groundSolid);
     p.grounded = false; p.groundSolid = null; p.vy = -2;
   }
   if (p.grounded) p.spinAir = false;
+  if (p.grounded && !p.rolling && p.dashT <= 0) p.chain = 0;   // al tocar el suelo andando, la cadena de enemigos se acaba
 
   // Franja de aceleración: empuja hacia delante mientras estés encima
   if (p.grounded && p.groundSolid && p.groundSolid.boost && (p.vx > 0 || ax > 0.1)) {
-    p.vx = Math.max(p.vx, BOOST_V);
-  }
+    const bv = p.groundSolid.boostV || BOOST_V;
+    if (p.vx < bv - 1 && !p.boosting) G.sfx.push('boost');
+    p.vx = Math.max(p.vx, bv);
+    p.boosting = true;
+  } else p.boosting = false;
   // Agua poco profunda (vados, arroyos y estanques): se chapotea más despacio y salpica al entrar y al correr
   const wade = !!(p.grounded && p.groundSolid && p.groundSolid.wade);
   if (wade) {
@@ -455,8 +506,11 @@ function stepPlayer(dt) {
     for (const pt of lv.paths) {
       if (pt.fall) continue;                         // las cuevas secretas solo se entran cayendo (abajo)
       // Un salto sobre la boca de una subida también entra (el salto no llega a 3.2): no se queda al otro lado
-      const onBase = p.grounded || (pt.kind === 'rise' && p.y - PH / 2 < pt.y0 + 3.2);
-      if (onBase && prevX < pt.x0 && p.x >= pt.x0 && (!pt.secret || p.rolling)) { enterTube(p, pt, p.vx); break; }
+      // Y un bucle también se coge con un saltito sobre su entrada (no se queda uno debajo, sin dar la vuelta)
+      const onBase = p.grounded || (pt.kind === 'rise' && p.y - PH / 2 < pt.y0 + 3.2) || (pt.kind === 'loop' && p.y - PH / 2 < pt.y0 + 1.6);
+      // Quien aterriza justo pasada la entrada de un bucle (viene volando de una meseta) también lo coge
+      const landed = pt.kind === 'loop' && p.grounded && wasAir && p.x >= pt.x0 && p.x < pt.x0 + 2.5;
+      if (onBase && ((prevX < pt.x0 && p.x >= pt.x0) || landed) && (!pt.secret || p.rolling)) { enterTube(p, pt, p.vx); break; }
     }
   }
   // Caída por una losa rota: al llegar a la pista por dentro de la boca de una cueva, entra en su tubo con la velocidad
@@ -480,8 +534,14 @@ function grant(type) {
   else if (type === 'speed') p.speedT = POWER_T;
   else if (type === 'star') p.starT = POWER_T;
   else if (type === 'life') G.lives = Math.min(G.lives + 1, 9);
+  G.sfx.push(type === 'life' ? 'life' : 'item');
   G.score += 50;
   G.fx.push({ x: p.x, y: p.y, n: 14, pal: 0 });
+}
+
+// Cada 100 anillos, una vida extra
+function ringGot() {
+  if (player.rings % 100 === 0) { G.lives = Math.min(G.lives + 1, 9); G.sfx.push('life'); G.popups.push({ x: player.x, y: player.y + 1.4, text: '1UP', big: true }); }
 }
 
 export function hurt() {
@@ -490,6 +550,7 @@ export function hurt() {
   if (p.shield) {                                      // el escudo absorbe el golpe: no se pierden anillos ni vida
     p.shield = false; p.invT = 1.5;
     G.fx.push({ x: p.x, y: p.y, n: 14, pal: 0 });
+    G.sfx.push('shieldLost'); G.shake += 0.3;
     return;
   }
   if (p.rings > 0) {                                    // con anillos: los suelta y sigue
@@ -499,6 +560,7 @@ export function hurt() {
       lv.scatter.push({ x: p.x, y: p.y, vx: dir * (1 + Math.random() * 4), vy: 5 + Math.random() * 5, life: 4 });
     }
     p.rings = 0;
+    G.sfx.push('hurt'); G.shake += 0.45;
     p.vx = -p.facing * 6; p.vy = 8; p.grounded = false; p.groundSolid = null;
     p.invT = 2; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0; p.path = null;
   } else {
@@ -508,13 +570,14 @@ export function hurt() {
 
 export function die() {
   G.lives--;
+  G.sfx.push('die'); G.shake += 0.5;
   if (G.lives <= 0) { G.onGameOver(); return; }
   const p = player, cp = G.checkpoint;
   p.x = cp.x; p.y = cp.y + 1;
   p.vx = 0; p.vy = 0; p.rings = 0; p.invT = 1.5;
   p.grounded = false; p.groundSolid = null; p.rolling = false; p.dashT = 0; p.crouch = false; p.charge = 0; p.spinAir = false; p.path = null;
   p.wet = false;
-  p.shield = false; p.speedT = 0; p.starT = 0;
+  p.shield = false; p.speedT = 0; p.starT = 0; p.chain = 0;
 }
 
 // Un paso fijo: móviles, jugador, enemigos, anillos, puntos de control, caída y meta
@@ -535,7 +598,7 @@ export function stepWorld(dt) {
   for (const z of lv.secrets) {
     const inside = z.path ? p.path === z.path : p.x >= z.x0 && p.x <= z.x1 && p.y >= z.y0 && p.y <= z.y1;
     if (!z.found && inside) {
-      z.found = true; G.secretsFound++;
+      z.found = true; G.secretsFound++; G.sfx.push('secret');
       if (G.onSecret) G.onSecret();
     }
   }
@@ -593,6 +656,7 @@ export function stepWorld(dt) {
   while (lv.blasts.length) {
     const b = lv.blasts.shift();
     G.fx.push({ x: b.x, y: b.y, n: 22, pal: 0 });
+    G.sfx.push('boom'); G.shake += 0.5;
     for (const e of lv.enemies) {
       if (!e.alive || Math.hypot(e.x - b.x, e.y - b.y) > b.r) continue;
       if (e.type === 'bomb') { if (e.st === 'idle') { e.st = 'fuse'; e.fuse = 0.25; } }
@@ -624,7 +688,7 @@ export function stepWorld(dt) {
   for (const r of lv.rings) {
     if (r.taken) continue;
     const dx = r.x - p.x, dy = r.y - p.y;
-    if (dx * dx + dy * dy < RING_R * RING_R) { r.taken = true; p.rings++; }
+    if (dx * dx + dy * dy < RING_R * RING_R) { r.taken = true; p.rings++; G.sfx.push('ring'); G.fx.push({ x: r.x, y: r.y, n: 4, pal: 2, z: r.z }); ringGot(); }
   }
   // Potenciadores: al pasar cerca se activan
   for (const it of lv.items) {
@@ -640,7 +704,7 @@ export function stepWorld(dt) {
     if (r.life <= 0 || r.y < lv.killY) { lv.scatter.splice(i, 1); continue; }
     if (r.life < 3.4) {
       const dx = r.x - p.x, dy = r.y - p.y;
-      if (dx * dx + dy * dy < RING_R * RING_R) { lv.scatter.splice(i, 1); p.rings++; }
+      if (dx * dx + dy * dy < RING_R * RING_R) { lv.scatter.splice(i, 1); p.rings++; G.sfx.push('ring'); ringGot(); }
     }
   }
 
@@ -649,6 +713,7 @@ export function stepWorld(dt) {
     if (!c.hit && p.x > c.x) {
       c.hit = true;
       G.checkpoint = { x: c.x, y: c.y + 1.2 };
+      G.sfx.push('checkpoint');
     }
   }
 
@@ -656,5 +721,5 @@ export function stepWorld(dt) {
   if (p.y < lv.killY && !p.path) { die(); if (G.mode !== 'play') return; }   // dentro de un tubo no hay caída al vacío
 
   // Meta
-  if (p.x >= lv.goalX) G.onComplete();
+  if (p.x >= lv.goalX) { G.sfx.push('goal'); G.onComplete(); }
 }

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { FILE, canvasTex, tiled } from './textures.js';
 import { mulberry32 } from './util.js';
 import { BLADE_GEO, CUT_PLANES, ROCK_GEO, UNIT_CONE, UNIT_CYL, UNIT_SPHERE, addBox, cyl, extrudeZ, instanced, lensShape, mesh, prism } from './geo.js';
-import { laneY, pathAt, slopeAt, TUBE_R } from './level.js';
+import { laneY, pathAt, pathZ, slopeAt, TUBE_R } from './level.js';
 
 // Colores de acento y de la galería (los mismos que en backdrop.js)
 const ACCENT_HEX = [0xffd24a, 0xff9800, 0x00e5ff];
@@ -74,6 +74,7 @@ function buildGear(mat) {
 // Se construye con la normal de la trayectoria para que no se retuerza; se ve por dentro (BackSide)
 // y el plano de corte quita la mitad cercana. Los anillos de refuerzo y las bridas quedan completos.
 export function buildTube(pt, T, G, zi) {
+  if (pt.loop) return buildLoopTrack(pt, T, G, zi);
   const SEG = 24;
   const n = pt.pts.length;
   const pos = [], nrm = [], uv = [], idx = [];
@@ -95,9 +96,12 @@ export function buildTube(pt, T, G, zi) {
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setIndex(idx);
+  // Las cuevas secretas se cortan también a ras de la pista: la boca del tubo no asoma sobre la hierba y no las delata
+  const clip = pt.top !== undefined ? [...CUT_PLANES, new THREE.Plane(new THREE.Vector3(0, -1, 0), pt.top - 0.05)] : CUT_PLANES;
+  // Flechas de luz que recorren el tubo hacia la salida (su textura se desplaza en updateWorld)
   const mat = new THREE.MeshStandardMaterial({
     map: T.tube, side: THREE.BackSide, roughness: 0.5, metalness: 0.15,
-    emissive: 0x0b1f2e, emissiveIntensity: 0.5, clippingPlanes: CUT_PLANES,
+    emissive: new THREE.Color(ACCENT_HEX[zi]), emissiveMap: T.tubeFlow, emissiveIntensity: 1.1, clippingPlanes: clip,
   });
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = false;
@@ -105,7 +109,7 @@ export function buildTube(pt, T, G, zi) {
 
   // Anillos de refuerzo a lo largo del tubo y bridas en las dos bocas
   const rib = new THREE.Color(RIB_HEX[zi]);
-  const ringM = new THREE.MeshStandardMaterial({ color: rib, emissive: rib, emissiveIntensity: 0.2, metalness: 0.6, roughness: 0.3 });
+  const ringM = new THREE.MeshStandardMaterial({ color: rib, emissive: rib, emissiveIntensity: 0.2, metalness: 0.6, roughness: 0.3, clippingPlanes: pt.top !== undefined ? clip : null });
   const count = Math.max(3, Math.round(pt.L / 2.2));
   const ribs = new THREE.InstancedMesh(new THREE.TorusGeometry(TUBE_R, 0.09, 8, 40), ringM, count);
   const flanges = new THREE.InstancedMesh(new THREE.TorusGeometry(TUBE_R + 0.3, 0.2, 8, 40), ringM, 2);
@@ -119,9 +123,58 @@ export function buildTube(pt, T, G, zi) {
   for (let i = 0; i < count; i++) place(ribs, i, pt.L * (i + 0.5) / count);
   place(flanges, 0, 0); place(flanges, 1, pt.L);
   ribs.instanceMatrix.needsUpdate = true; flanges.instanceMatrix.needsUpdate = true;
-  if (pt.kind === 'loop') ribs.visible = false;      // en los bucles los aros cruzan el lazo y lo ensucian: solo quedan las bridas
   G.add(ribs, flanges);
   return m;
+}
+
+// Bucle: pista abierta (una cinta) que da la vuelta, como en los Sonic clásicos. Su sección es un rectángulo: la cara
+// interior (por donde rueda el erizo) es pista, el canto de delante y el de detrás llevan cuadros y dos raíles de luz
+// marcan los bordes. La cinta se desplaza en z a lo largo del lazo (pathZ) para que la entrada y la salida no se crucen
+const LOOP_HW = 1.05, LOOP_TH = 0.8;      // media anchura de la cinta y grosor
+function buildLoopTrack(pt, T, G, zi) {
+  const n = pt.pts.length;
+  // Barrido de una sección (lista de puntos [n, z] relativos: n hacia el centro del lazo, z en profundidad) por el lazo
+  const sweep = (sec, uvOf, closed = false) => {
+    const pos = [], nrm = [], uv = [], idx = [];
+    const edges = closed ? sec.length : sec.length - 1;
+    for (let e = 0; e < edges; e++) {
+      const a = sec[e], b = sec[(e + 1) % sec.length];
+      const base = pos.length / 3;
+      for (let i = 0; i < n; i++) {
+        const [px, py] = pt.pts[i], [nx, ny] = pt.N[i], zc = pathZ(pt, pt.cum[i]);
+        for (const [k, q] of [[0, a], [1, b]]) {
+          pos.push(px + nx * q[0], py + ny * q[0], zc + q[1]);
+          // Normal de la cara: perpendicular a la arista (a→b) dentro de la sección
+          const dn = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dn, dz) || 1;
+          const fn = -dz / L, fz = dn / L;
+          nrm.push(nx * fn, ny * fn, fz);
+          uv.push(...uvOf(pt.cum[i], k, e));
+        }
+        if (i < n - 1) { const v = base + i * 2; idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3); }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    return geo;
+  };
+  const hw = LOOP_HW, th = LOOP_TH, lift = 0.03;
+  const clip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -(pt.y0 - 0.02))];   // nada de la cinta asoma bajo la pista
+  // Cara interior (pista): de delante a detrás, mirando al centro del lazo
+  const topM = new THREE.MeshStandardMaterial({ map: tiled(T.top, 1, 1), roughness: 0.8, side: THREE.DoubleSide, clippingPlanes: clip });
+  const top = new THREE.Mesh(sweep([[lift, hw], [lift, -hw]], (c, k) => [c / 4, k]), topM);
+  // Cantos de cuadros (delante y detrás) y cara exterior
+  const checkM = new THREE.MeshStandardMaterial({ map: checkerTex(zi), roughness: 0.75, side: THREE.DoubleSide, clippingPlanes: clip });
+  const sides = new THREE.Mesh(sweep([[lift, -hw], [-th, -hw], [-th, hw], [lift, hw]], (c, k) => [c / 0.8, k]), checkM);
+  // Raíles de luz en los dos bordes de la pista
+  const railM = new THREE.MeshBasicMaterial({ color: ACCENT_HEX[zi], toneMapped: false, side: THREE.DoubleSide, clippingPlanes: clip });
+  const rail = (zs) => sweep([[lift + 0.13, zs - 0.07], [lift, zs - 0.07], [lift, zs + 0.07], [lift + 0.13, zs + 0.07]], () => [0, 0], true);
+  const rails = [new THREE.Mesh(rail(hw), railM), new THREE.Mesh(rail(-hw), railM)];
+  for (const m of [top, sides]) { m.castShadow = true; m.receiveShadow = true; }
+  G.add(top, sides, ...rails);
+  return top;
 }
 
 // Señal de bajada: poste de acero y placa con una flecha hacia abajo
@@ -189,11 +242,10 @@ function caveHoles(c, bottom) {
   return new THREE.CanvasTexture(cv);
 }
 
-// Arco de cuadros detrás de cada bucle: una pared con un agujero circular por donde pasa el lazo y una abertura
-// abajo, por donde entra y sale la pista. El borde inferior queda a la altura del tubo, así que la pista pasa bajo él.
+// Disco de cuadros detrás de cada bucle (una pared que asienta el lazo sobre el suelo)
 const CHECK_HEX = [[0x8d6a43, 0xc9a66b], [0x4a5058, 0x6e7782], [0xb89c6c, 0xe6d3a4]];   // dos tonos de cuadros por zona
 const RIM_HEX = [0x4f9a35, 0x3b4149, 0x7d6a58];                                          // canto: hierba, acero o roca
-const ARCH_Z = -2.75, ARCH_D = 0.9;     // la pared va detrás del tubo (que llega hasta z = -1.6)
+const ARCH_Z = -2.75, ARCH_D = 0.9;     // la pared va detrás de la cinta del bucle (que llega hasta z = -2.05)
 const checkers = new Map();
 function checkerTex(zi) {
   if (!checkers.has(zi)) {
@@ -210,27 +262,30 @@ function checkerTex(zi) {
 }
 function buildLoopFrame(pt, zi, T, G) {
   const { cx, cy, R } = pt.loop;
-  const Ri = R + TUBE_R + 0.25, Ro = Ri + 1.7;          // radio del agujero y de la pared (relativos al centro del bucle)
-  const dy = TUBE_R - R;                                 // borde inferior: a la altura del tubo, sobre la pista
-  const ao = Math.asin(dy / Ro), ai = Math.asin(dy / Ri);
+  // Pared de cuadros detrás del lazo, en sombra, para que la cinta del bucle destaque delante; llega hasta el suelo
+  const Ro = R + LOOP_TH + 0.55, a0 = Math.asin(-R / Ro);
   const shape = new THREE.Shape();
-  shape.moveTo(Ro * Math.cos(ao), Ro * Math.sin(ao));
-  shape.absarc(0, 0, Ro, ao, Math.PI - ao, false);      // arco exterior, por arriba
-  shape.lineTo(-Ri * Math.cos(ai), Ri * Math.sin(ai));
-  shape.absarc(0, 0, Ri, Math.PI - ai, ai, true);       // arco interior (el agujero), de vuelta
+  shape.moveTo(Ro * Math.cos(a0), Ro * Math.sin(a0));
+  shape.absarc(0, 0, Ro, a0, Math.PI - a0, false);
   shape.closePath();
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth: ARCH_D - 0.3, bevelEnabled: true, bevelThickness: 0.15, bevelSize: 0.15, bevelSegments: 2, curveSegments: 72,
   });
-  const cap = new THREE.MeshStandardMaterial({ map: checkerTex(zi), roughness: 0.9 });
+  const cap = new THREE.MeshStandardMaterial({ map: checkerTex(zi), color: 0x8c8c8c, roughness: 0.95 });
   const rim = new THREE.MeshStandardMaterial({ color: RIM_HEX[zi], roughness: 0.9 });
   const m = new THREE.Mesh(geo, [cap, rim]);
   m.position.set(cx, cy, ARCH_Z + 0.15);                 // el bisel asoma 0.15 por delante y por detrás
   m.receiveShadow = true;
   G.add(m);
-  // Dos pies bajo los extremos del arco, hasta el suelo, para que no flote sobre la pista
-  const yb = pt.y0 + TUBE_R, yFoot = pt.y0 - 4, legX = (Ro * Math.cos(ao) + Ri * Math.cos(ai)) / 2, legW = Ro * Math.cos(ao) - Ri * Math.cos(ai);
-  for (const sgn of [-1, 1]) addBox(G, rim, cx + sgn * legX, (yFoot + yb) / 2, ARCH_Z + ARCH_D / 2, legW, yb - yFoot, ARCH_D);
+}
+
+// Franja de aceleración: flechas luminosas que corren hacia delante (world.js desplaza las texturas de lv.flows)
+function addBoostPad(lv, G, T, cx, top, w) {
+  const map = tiled(T.chevron, w / 4, 1), em = tiled(T.chevron, w / 4, 1);
+  const chev = new THREE.MeshStandardMaterial({ map, emissive: 0xffffff, emissiveMap: em, emissiveIntensity: 1.1, roughness: 0.4 });
+  addBox(G, chev, cx, top + 0.03, 0, w, 0.06, 2.6);
+  lv.flows = lv.flows || [];
+  lv.flows.push(map, em);
 }
 
 // Construye la pista en los grupos de cada tramo (chunkOf devuelve el grupo de una coordenada x)
@@ -258,10 +313,7 @@ export function buildLane(lv, zi, T, chunkOf) {
         // Suelo de galería: roca (verde) o acero (industrial), sin hierba
         const floorM = new THREE.MeshStandardMaterial({ map: tiled(zi === 1 ? T.plank : T.rock, w / 4, 1), color: FLOOR_HEX[zi], roughness: 0.9 });
         addBox(G, floorM, cx, (s.y0 + top) / 2, 0, w, top - s.y0, 4);
-        if (s.boost) {
-          const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
-          addBox(G, chev, cx, top + 0.03, 0, w, 0.06, 2.6);
-        }
+        if (s.boost) addBoostPad(lv, G, T, cx, top, w);
         continue;
       }
       // La tierra queda 0.5 por debajo de la hierba para no compartir plano (evita destellos).
@@ -277,14 +329,16 @@ export function buildLane(lv, zi, T, chunkOf) {
       const boxes = s.thin ? [] : [addBox(G, sideM, cx, (bottom + yTop) / 2, 0, w, yTop - bottom, 4)];   // la losa de una cueva no tapa el tubo
       boxes.push(addBox(G, [edgeM, edgeM, topM, sideM, edgeM, edgeM], cx, top - 0.25, 0, w, 0.5, 4.4));
       if (crack) {
-        const seamM = new THREE.MeshStandardMaterial({ color: 0x3b2e22, roughness: 1 });
+        // Grietas finas con un leve brillo que late (world.js): una pista para quien se fija, sin señal que lo diga
+        const seamM = new THREE.MeshStandardMaterial({ color: 0x3b2e22, emissive: ACCENT_HEX[zi], emissiveIntensity: 0, roughness: 1 });
         for (const f of [0.25, 0.7]) boxes.push(addBox(G, seamM, cx - w / 2 + w * f, top + 0.02, 0, 0.07, 0.03, 4.5));
+        boxes.push(addBox(G, seamM, cx, top + 0.02, 0.6, w * 0.45, 0.03, 0.06));
+        lv.glows = lv.glows || [];
+        lv.glows.push(seamM);
         s.meshes = boxes;
       }
-      if (s.boost) {
-        const chev = new THREE.MeshStandardMaterial({ map: tiled(T.chevron, w / 4, 1), emissive: 0xffffff, emissiveMap: tiled(T.chevron, w / 4, 1), emissiveIntensity: 0.9, roughness: 0.4 });
-        addBox(G, chev, cx, top + 0.03, 0, w, 0.06, 2.6);
-      } else if (zi === 0 && !s.wade && !crack) {
+      if (s.boost) addBoostPad(lv, G, T, cx, top, w);
+      else if (zi === 0 && !s.wade && !crack) {
         addGrassSurf(G, { x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: () => top });
       }
     } else if (s.kind === 'slope') {
@@ -400,8 +454,9 @@ export function buildLane(lv, zi, T, chunkOf) {
         const topM = new THREE.MeshStandardMaterial({ map: tiled(T.top, w / 3, 1), roughness: 0.85 });
         addBox(G, [sideM, sideM, topM, sideM, sideM, sideM], cx, (s.y0 + s.y1) / 2, 0, w, h, 2.6);
         supports(G, s, sideM);
-        if (zi === 0) addGrassSurf(G, { x0: s.x0, x1: s.x1, z0: -1.1, z1: 1.1, y: () => s.y1 });
+        if (zi === 0 && !s.boost) addGrassSurf(G, { x0: s.x0, x1: s.x1, z0: -1.1, z1: 1.1, y: () => s.y1 });
       }
+      if (s.boost) addBoostPad(lv, G, T, cx, s.y1, w);
     }
   }
 

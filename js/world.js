@@ -28,7 +28,7 @@ export function buildWorld(lv, zi, ai, scene) {
   const bd = buildBackdrop(lv, zi, ai, T, chunkOf, root);
   const ent = buildEntities(lv, zi, chunkOf, root);
   const water = buildWater(lv, chunkOf);
-  return { scene, root, chunks, bd, ent, water };
+  return { scene, root, chunks, bd, ent, water, T };
 }
 
 // Muestra los tramos cercanos al jugador (la ventana es amplia porque el fondo se ve lejos)
@@ -37,6 +37,10 @@ export function updateWorld(W, lv, t, dt, px) {
   updateBackdrop(W.bd, t, dt);
   updateEntities(W.ent, lv, t, dt);
   updateWater(W.water, t, dt, px);
+  // Luces que corren por los tubos y por las franjas de aceleración, y el brillo de las losas agrietadas
+  W.T.tubeFlow.offset.x = -t * 1.6;
+  if (lv.flows) for (const tex of lv.flows) tex.offset.x = -t * 2.5;
+  if (lv.glows) { const k = 0.35 + 0.35 * Math.sin(t * 3.2); for (const m of lv.glows) m.emissiveIntensity = k; }
 }
 
 // Libera geometrías y materiales de la fase (las texturas compartidas se conservan)

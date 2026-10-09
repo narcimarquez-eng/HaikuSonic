@@ -6,7 +6,9 @@ import { makeBot } from './bots.js';
 export const ZONE_NAMES = ['Zona Verde', 'Zona Industrial', 'Zona Acuática'];
 export const KILL_Y = [-14, -14, -3.4];
 export const SLOPE_MAX = 3.2;
-export const LOOP_R = 3;      // radio del bucle vertical (centro de la trayectoria)
+export const LOOP_R = 4.2;    // radio del bucle vertical (centro de la trayectoria)
+export const LOOP_Z = 1.0;    // el lazo se desplaza en profundidad: entra por detrás y sale por delante (no se cruza consigo)
+export const LOOP_V = 32;     // velocidad que da la franja de aceleración antes de un bucle
 export const TUBE_R = 1.6;    // radio interior del tubo que rodea la trayectoria
 export const SPRING_V = 26;
 export const DROP_W = 6;      // ancho horizontal de una bajada (y de una subida)
@@ -23,19 +25,19 @@ const WALL = 8.5;             // distancia del muelle al muro de una meseta: a v
 // water: un hueco con agua, con muelle y meseta. lift: muelle y meseta de 4. climb: dos mesetas (4 y 8)
 const PROFILE = [
   [ // Verde: tramos, bucles, valles, arroyos, cascadas, pinchos, charcos, mesetas, avispas y erizos
-    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 26, hills: 34, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, snake: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
-    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 30, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, snake: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
-    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 26, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, snake: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
+    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 26, hills: 34, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 10, snake: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
+    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 30, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 14, snake: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
+    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 26, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 16, snake: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
   ],
   [ // Industrial: cintas, huecos, valles, arroyos, pinchos, mesetas, torretas y erizos
-    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 22, hills: 28, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, snake: 6, spike: 9, lift: 8, climb: 5 } },
-    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 28, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, snake: 7, spike: 11, lift: 9, climb: 7 } },
-    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 24, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, snake: 8, spike: 13, lift: 10, climb: 8 } },
+    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 22, hills: 28, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 9, snake: 6, spike: 9, lift: 8, climb: 5 } },
+    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 28, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 12, snake: 7, spike: 11, lift: 9, climb: 7 } },
+    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 24, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 14, snake: 8, spike: 13, lift: 10, climb: 8 } },
   ],
   [ // Acuática: balsas, bucles, valles con laguna, pinchos de coral, agua y mesetas
-    { len: 1000, enemies: 0.5, fly: 0.3, shoot: 0.1, wasp: 0.3, hop: 0.1, spiny: 0.1, w: { upper: 6, run: 20, hills: 8, dip: 8, gap: 14, boost: 4, loop: 7, spike: 6, water: 9, lift: 6, climb: 4 } },
-    { len: 1150, enemies: 0.6, fly: 0.35, shoot: 0.15, wasp: 0.35, hop: 0.15, spiny: 0.15, w: { upper: 6, run: 16, hills: 8, dip: 10, gap: 14, boost: 4, loop: 9, spike: 7, water: 11, lift: 7, climb: 5 } },
-    { len: 1300, enemies: 0.7, fly: 0.4, shoot: 0.2, wasp: 0.4, hop: 0.2, spiny: 0.2, w: { upper: 6, run: 14, hills: 6, dip: 12, gap: 14, boost: 4, loop: 12, spike: 7, water: 13, lift: 8, climb: 6 } },
+    { len: 1000, enemies: 0.5, fly: 0.3, shoot: 0.1, wasp: 0.3, hop: 0.1, spiny: 0.1, w: { upper: 6, run: 20, hills: 8, dip: 8, gap: 14, boost: 4, loop: 11, spike: 6, water: 9, lift: 6, climb: 4 } },
+    { len: 1150, enemies: 0.6, fly: 0.35, shoot: 0.15, wasp: 0.35, hop: 0.15, spiny: 0.15, w: { upper: 6, run: 16, hills: 8, dip: 10, gap: 14, boost: 4, loop: 13, spike: 7, water: 11, lift: 7, climb: 5 } },
+    { len: 1300, enemies: 0.7, fly: 0.4, shoot: 0.2, wasp: 0.4, hop: 0.2, spiny: 0.2, w: { upper: 6, run: 14, hills: 6, dip: 12, gap: 14, boost: 4, loop: 15, spike: 7, water: 13, lift: 8, climb: 6 } },
   ],
 ];
 
@@ -97,6 +99,11 @@ export function pathAt(path, s) {
   return { P: [mx(path.pts[lo][0], path.pts[j][0]), mx(path.pts[lo][1], path.pts[j][1])], T, N: [-T[1], T[0]], K: mx(path.K[lo], path.K[j]) };
 }
 
+// Profundidad (z) del dibujo de una trayectoria en s: los bucles van de -zA (entrada) a +zA (salida); el resto, en 0
+export function pathZ(path, s) {
+  return path.zA ? -path.zA * Math.cos(Math.PI * clamp(s / path.L, 0, 1)) : 0;
+}
+
 // Bucle: empieza en (x0, y0) con tangente horizontal y acaba D más adelante, a la misma altura
 export function loopPts(x0, y0, R, D = 0) {
   const pts = [];
@@ -133,6 +140,9 @@ export function buildLevel(zi, ai) {
   const pushGround = (x0, x1, y1, extra = {}) => S.push({ kind: 'ground', x0, x1, y0: Math.min(-4, y1 - 2), y1, ...extra });
   // Muelle: al pisarlo lanza hacia arriba y conserva la velocidad horizontal (el vuelo lleva a la meseta)
   const spring = (sx, y0) => S.push({ kind: 'spring', x0: sx, x1: sx + 1.2, y0, y1: y0 + 0.6, power: SPRING_V, squash: 0 });
+  // Muelle al pie del muro de una meseta: quien pasa volando sobre el primer muelle y cae junto al muro no se queda
+  // atascado (sube recto y, empujando hacia delante, pasa por encima)
+  const wallSpring = (wx, y0) => spring(wx - 1.3, y0);
   // Meseta: terreno sólido que sube de golpe hasta top + h y baja después por una rampa hasta la pista
   const mesa = (wx, h, len, down) => {
     S.push({ kind: 'ground', x0: wx, x1: wx + len, y0: -4, y1: top + h });
@@ -169,7 +179,7 @@ export function buildLevel(zi, ai) {
   const pathRings = (pt, fracs) => {
     for (const f of fracs) {
       const q = pathAt(pt, pt.L * f);
-      lv.rings.push({ x: q.P[0] + q.N[0] * 0.5, y: q.P[1] + q.N[1] * 0.5, taken: false });
+      lv.rings.push({ x: q.P[0] + q.N[0] * 0.5, y: q.P[1] + q.N[1] * 0.5, z: pathZ(pt, pt.L * f), taken: false });
     }
   };
 
@@ -293,16 +303,25 @@ export function buildLevel(zi, ai) {
     x = a + g;
   };
 
-  // Bucle vertical: franja de aceleración antes para tener velocidad; el tubo entra por la pista y sale D más
-  // adelante, así se ven la entrada y la salida, y un aro de roca rodea el lazo (con la abertura abajo)
-  const loopSec = () => {
-    const a = x + 6, D = 3.6;
-    S.push({ kind: "ground", x0: x, x1: a, y0: -4, y1: top, boost: 1, noEnemy: true });
-    pushGround(a, a + 9, top, { noEnemy: true });
-    const pt = addPath(loopPts(a, top, LOOP_R, D), "loop");
-    pt.loop = { cx: a + D / 2, cy: top + LOOP_R, R: LOOP_R, gap: 1.25 };
-    pathRings(pt, [0.2, 0.35, 0.5, 0.65, 0.8]);
-    x = a + 9;
+  // Bucle vertical: franja de aceleración antes para tener velocidad; la pista del lazo entra por la pista y sale D más
+  // adelante (y algo más cerca de la cámara), así se ven la entrada y la salida; detrás, un disco de cuadros (lane.js).
+  // Con double, dos bucles seguidos con una franja corta entre ellos
+  const loopSec = (double = false) => {
+    if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
+    pushGround(x, x + 4, top, { noEnemy: true });
+    x += 4;
+    for (let k = 0, n = double ? 2 : 1; k < n; k++) {
+      const a = x + (k ? 5 : 9), D = 4;
+      S.push({ kind: 'ground', x0: x, x1: a, y0: -4, y1: top, boost: 1, boostV: LOOP_V, noEnemy: true });
+      pushGround(a, a + D + 7, top, { noEnemy: true });
+      const pt = addPath(loopPts(a, top, LOOP_R, D), 'loop');
+      pt.zA = LOOP_Z;
+      pt.loop = { cx: a + D / 2, cy: top + LOOP_R, R: LOOP_R };
+      pathRings(pt, [0.15, 0.27, 0.39, 0.5, 0.61, 0.73, 0.85]);
+      loopsMade++;
+      x = a + D + 7;
+    }
+    ringLine(x - 6, x - 1, top + 1.2, 3);
   };
 
   // Cuevas secretas con tubo: una losa agrietada en la pista. Rodando se rompe y el jugador cae al tubo, que atraviesa la
@@ -396,6 +415,9 @@ export function buildLevel(zi, ai) {
     lv.secrets.push({ kind: 'tube', path: pt, x0: Xs, x1: Xe + (plateau ? 16 : 0), y0: top - 10, y1: top + exitH + 1, found: false });
     lv.caves.push({ x0: Xs, x1: mirador ? Xe + 15 : Xe, top, form: kind, path: pt, gap: [Xs, Xs + W] });
     if (plateau) {
+      spring(Xe - WALL, top);                          // quien cruza la losa andando sube a la meseta con un muelle
+      wallSpring(Xe, top);
+      flightRings(Xe - WALL, top, [0.25, 0.45]);
       x = mesa(Xe, exitH, rnd(14, 16), rnd(8, 9));    // plataforma sobre la pista a donde sube el tubo
       itemAt(Xe + 5, top + exitH + 1.3, randItem());
       ringLine(Xe + 2, Xe + 12, top + exitH + 1.4, 5);
@@ -572,6 +594,7 @@ export function buildLevel(zi, ai) {
     const sp = x + rnd(9, 12), wx = sp + WALL;
     pushGround(x, wx, top);
     spring(sp, top);
+    wallSpring(wx, top);
     flightRings(sp, top, [0.25, 0.45]);
     ringArc(wx + 9, top + 5.2, 6, 5);
     x = mesa(wx, 4, 26, 10);
@@ -584,9 +607,11 @@ export function buildLevel(zi, ai) {
     const sp2 = wx1 + 20, wx2 = sp2 + WALL;          // el vuelo del primer muelle cae entre los dos muelles
     pushGround(x, wx1, top);
     spring(sp1, top);
+    wallSpring(wx1, top);
     flightRings(sp1, top, [0.25, 0.45]);
     S.push({ kind: 'ground', x0: wx1, x1: wx2, y0: -4, y1: top + 4 });
     spring(sp2, top + 4);
+    wallSpring(wx2, top + 4);
     flightRings(sp2, top + 4, [0.25, 0.45]);
     ringArc(wx1 + 9, top + 5.2, 6, 5);
     x = mesa(wx2, 8, 12, 12);
@@ -625,6 +650,7 @@ export function buildLevel(zi, ai) {
     const sp = x + rnd(9, 12), wx = sp + 11, Lm = 14, PD = 4, px = wx + Lm;
     pushGround(x, wx, top);
     spring(sp, top);
+    wallSpring(wx, top);
     flightRings(sp, top, [0.25, 0.45]);
     S.push({ kind: 'ground', x0: wx, x1: px, y0: -4, y1: top + 6.5 });
     S.push({ kind: 'ground', x0: px, x1: px + 16, y0: -4, y1: top - PD, wade: true, wl: top - PD + 1.3 });
@@ -639,8 +665,11 @@ export function buildLevel(zi, ai) {
   let secretPending = rng() < 0.7;      // a veces: una cámara oculta sobre la rama alta de este acto
   let cannonPending = rng() < 0.7;      // a veces: un cañón que lanza a un mirador alto
   let tubePending = zi !== 2;           // verde e industrial: al menos una cueva secreta por fase
+  let loopsMade = 0;                    // cada fase tiene al menos dos bucles: uno pronto y otro (a veces doble) a mitad
   while (x < prof.len) {
     const r = pickWeighted(prof.w, rng);
+    if (loopsMade < 1 && x > prof.len * 0.12) { loopSec(); runSec(rnd(12, 18)); continue; }
+    if (loopsMade < 2 && x > prof.len * 0.55) { loopSec(rng() < 0.6); runSec(rnd(12, 18)); continue; }
     if (secretPending && x > prof.len * 0.35) { secretPending = false; upperSec(true); continue; }
     if (cannonPending && x > prof.len * 0.4) { cannonPending = false; cannonSec(); continue; }
     if (tubePending && x > prof.len * 0.5) { tubePending = false; tubeSec(nextTube()); continue; }
@@ -650,7 +679,7 @@ export function buildLevel(zi, ai) {
     else if (r === 'hills') hillsSec(rnd(60, 90));
     else if (r === 'gap') { gapSec(); runSec(rnd(10, 16)); }
     else if (r === 'boost') boostSec(rnd(28, 40));
-    else if (r === 'loop') { loopSec(); runSec(rnd(12, 18)); }
+    else if (r === 'loop') { loopSec(rng() < 0.3); runSec(rnd(12, 18)); }
     else if (r === 'snake') tubeSec(nextTube());
     else if (r === 'gentle') gentleSec();
     else if (r === 'step') stepSec();
@@ -725,5 +754,7 @@ export function buildLevel(zi, ai) {
   lv.enemies = lv.enemies.filter((e) => !lv.caves.some((c) => Math.max(e.x, e.maxX ?? e.x) + 14 > c.x0 && Math.min(e.x, e.minX ?? e.x) - 14 < c.x1));
   // Ningún suelo puede quedar con la base por encima de su superficie (un valle o un arroyo bajo -4)
   for (const q of S) if (q.kind === 'ground' && q.y0 >= q.y1) q.y0 = q.y1 - 4;
+  // Ni una rampa con la base por encima de su parte baja: un salto dentro de la subida de un valle hondo la atravesaría
+  for (const q of S) if (q.kind === 'slope') q.y0 = Math.min(q.y0, Math.min(q.ya, q.yb) - 4);
   return lv;
 }

@@ -170,6 +170,22 @@ function tubeDraw(base, check, rim) {
     g.fillRect(0, s * 0.35, s, s * 0.03);
   };
 }
+// Luces del tubo: negro (no brilla) salvo una fila de flechas por la pared del fondo y dos líneas finas a sus lados.
+// u va a lo largo del tubo (una repetición cada 10 unidades) y v da la vuelta a su sección (la pared del fondo es v = 0.75)
+function flowDraw(g, s) {
+  g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+  g.fillStyle = '#fff';
+  const y0 = s * 0.19, y1 = s * 0.31, ym = (y0 + y1) / 2;
+  for (let k = 0; k < 3; k++) {
+    const x = k * s / 3 + 18;
+    g.beginPath();
+    g.moveTo(x, y0); g.lineTo(x + 26, ym); g.lineTo(x, y1);
+    g.lineTo(x + 12, y1); g.lineTo(x + 38, ym); g.lineTo(x + 12, y0);
+    g.closePath(); g.fill();
+  }
+  g.fillStyle = 'rgba(255,255,255,0.55)';
+  g.fillRect(0, s * 0.12, s, 3); g.fillRect(0, s * 0.38, s, 3);
+}
 // Señal de bajada: flecha hacia abajo sobre placa oscura
 function arrowDraw(acc) {
   return (g, s) => {
@@ -228,6 +244,7 @@ export function zoneTextures(zi) {
   T.chevron = canvasTex(256, chevronDraw(ACCENT[zi]));
   T.arrowDown = canvasTex(256, arrowDraw(ACCENT[zi]));
   T.tube = canvasTex(256, tubeDraw(...TUBE_COLORS[zi]));
+  T.tubeFlow = canvasTex(256, flowDraw);                 // compartida por todos los tubos de la zona: world.js la desplaza
   if (zi === 0) {
     T.top = FILE.grass || pixelTex(256, grassPix);
     T.side = pixelTex(256, dirtPix);

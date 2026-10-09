@@ -1,6 +1,7 @@
 // Jugador: erizo azul con púas, guantes, zapatillas y ojos; modo bola al rodar o girar en el aire
 import * as THREE from 'three';
 import { LIMB_GEO, UNIT_CONE, UNIT_SPHERE, addBox, mesh } from './geo.js';
+import { pathAt, pathZ } from './level.js';
 
 const std = (color, roughness = 0.6, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const sph = (parent, mat, x, y, z, rx, ry = rx, rz = rx) => mesh(parent, UNIT_SPHERE, mat, x, y, z, rx, ry, rz);
@@ -114,27 +115,81 @@ function animatePlayer(PV, p, dt) {
   if (running) lean = -0.1 * sp;
   else if (!p.grounded) lean = p.vy > 0 ? -0.18 : 0.12;
   PV.lean.rotation.z += (lean - PV.lean.rotation.z) * (1 - Math.exp(-dt * 12));
-  PV.lean.scale.set(1, p.crouch ? 0.74 : 1, 1);
-  PV.lean.position.y = p.crouch ? -0.12 : 0;
+  const ballCrouch = p.crouch && p.charge > 0.02;
+  PV.lean.scale.set(1, p.crouch && !ballCrouch ? 0.74 : 1, 1);
+  PV.lean.position.y = p.crouch && !ballCrouch ? -0.12 : ballCrouch ? -0.08 : 0;
 }
 
 // Coloca el modelo sobre la caja de colisión y aplica el giro, el modo bola y el parpadeo
 export function updatePlayer(PV, p, t, dt) {
   const VS = 1.3;   // escala visual; los pies quedan sobre la caja de colisión
-  PV.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, 0);
+  // Profundidad: en un bucle sigue a la cinta (que se desplaza en z); fuera vuelve suave a la pista
+  const z = p.path ? pathZ(p.path, p.s) : PV.root.position.z * Math.exp(-dt * 10);
+  PV.root.position.set(p.x, p.y - 0.5 + 0.56 * VS, z);
+  if (p.path) {                                           // en un tubo, los pies van sobre la trayectoria (sea cual sea su giro)
+    const N = pathAt(p.path, p.s).N, k = 0.56 * VS - 0.5;
+    PV.root.position.x += N[0] * k; PV.root.position.y += N[1] * k - k;
+  }
   PV.root.scale.set(p.facing * VS, VS, VS);
   PV.root.visible = !(p.invT > 0 && Math.floor(t * 16) % 2 === 0);
   PV.bubble.visible = p.shield;
   if (p.shield) PV.bubble.scale.setScalar(1 + 0.05 * Math.sin(t * 8));
-  const ball = p.rolling || p.spinAir;
+  const charging = p.crouch && p.charge > 0.02;            // cargando el spin dash: bola que gira en el sitio
+  const ball = p.rolling || p.spinAir || charging;
   PV.face.visible = !ball; PV.head.visible = !ball;
   PV.arms.forEach((a) => (a.visible = !ball));
   PV.feet.forEach((f) => (f.visible = !ball));
   PV.backSpikes.visible = !ball;
   PV.ballSpikes.visible = ball;
   if (p.path) { PV.air = 0; PV.spin.rotation.z = -p.s / 0.8; }
+  else if (charging) { PV.air -= dt * (20 + 40 * p.charge); PV.spin.rotation.z = PV.air; }
   else if (p.rolling) { PV.air = 0; PV.spin.rotation.z = -p.roll; }
   else if (p.spinAir) { PV.air -= dt * 18; PV.spin.rotation.z = PV.air; }
   else { PV.air = 0; PV.spin.rotation.z = 0; }
   animatePlayer(PV, p, dt);
+}
+
+// Estela: cinta brillante que sigue al erizo cuando va rápido, rueda o recorre un tubo (azul; dorada con la estrella)
+const TRAIL_N = 14;
+export function buildTrail(scene) {
+  const pos = new Float32Array(TRAIL_N * 2 * 3), col = new Float32Array(TRAIL_N * 2 * 3), idx = [];
+  for (let i = 0; i < TRAIL_N - 1; i++) { const a = 2 * i; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  return { mesh, hist: [], k: 0, col: new THREE.Color() };
+}
+
+export function updateTrail(tr, PV, p, dt) {
+  const c = PV.root.position, h = tr.hist;
+  const head = { x: c.x, y: c.y, z: c.z };
+  if (h.length && Math.hypot(h[0].x - head.x, h[0].y - head.y) > 6) h.length = 0;   // salto de posición (reaparece)
+  h.unshift(head);
+  if (h.length > TRAIL_N) h.length = TRAIL_N;
+  const speed = p.path ? Math.abs(p.pv) : Math.hypot(p.vx, p.vy);
+  const want = p.path || p.dashT > 0 || p.starT > 0 ? 1 : p.rolling ? 0.7 : Math.min(1, Math.max(0, (speed - 20) / 12));
+  tr.k += (want - tr.k) * (1 - Math.exp(-dt * 8));
+  tr.col.setHex(p.starT > 0 ? 0xffd23f : p.speedT > 0 ? 0xff9a3c : 0x3fa9ff);
+  const pos = tr.mesh.geometry.attributes.position.array, col = tr.mesh.geometry.attributes.color.array;
+  for (let i = 0; i < TRAIL_N; i++) {
+    const a = h[Math.min(i, h.length - 1)], b = h[Math.min(i + 1, h.length - 1)];
+    let dx = a.x - b.x, dy = a.y - b.y;
+    const L = Math.hypot(dx, dy);
+    if (L < 1e-4) { dx = 1; dy = 0; } else { dx /= L; dy /= L; }
+    const f = 1 - i / (TRAIL_N - 1), w = 0.55 * f + 0.05;
+    for (let s = 0; s < 2; s++) {
+      const sg = s ? -1 : 1, o = (2 * i + s) * 3;
+      pos[o] = a.x - dy * w * sg; pos[o + 1] = a.y + dx * w * sg; pos[o + 2] = a.z - 0.05;
+      const e = tr.k * f * f * 0.85;
+      col[o] = tr.col.r * e; col[o + 1] = tr.col.g * e; col[o + 2] = tr.col.b * e;
+    }
+  }
+  tr.mesh.geometry.attributes.position.needsUpdate = true;
+  tr.mesh.geometry.attributes.color.needsUpdate = true;
+  tr.mesh.visible = tr.k > 0.02 && PV.root.visible;
 }
