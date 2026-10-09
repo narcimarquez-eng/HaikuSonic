@@ -163,7 +163,7 @@ function buildGallery(gl, T, zi, chunkOf) {
 // Tubo secreto dentro de la tierra: una cara de tierra detrás del tubo y otra delante, con un hueco con la forma del
 // tubo y la boca de la losa rota. Así el tubo se ve atravesando la tierra y no una sala abierta
 function buildCave(c, T, zi, chunkOf) {
-  const BOTTOM = -14, w = c.x1 - c.x0, h = c.top - BOTTOM, cx = (c.x0 + c.x1) / 2, cy = (c.top + BOTTOM) / 2, G = chunkOf(cx);
+  const BOTTOM = -18, w = c.x1 - c.x0, h = c.top - BOTTOM, cx = (c.x0 + c.x1) / 2, cy = (c.top + BOTTOM) / 2, G = chunkOf(cx);   // la tierra baja hasta 18: bajo el tubo profundo (15)
   const back = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, h / 4), color: 0x9a9086, roughness: 1 }));
   back.position.set(cx, cy, -1.9);
   G.add(back);
@@ -268,7 +268,7 @@ export function buildLane(lv, zi, T, chunkOf) {
       // Una losa solo llega hasta 4 unidades bajo la superficie: debajo está la galería.
       // La losa agrietada (secreta) se ve como la pista, con unas grietas finas; sus mallas se ocultan al romperse
       const crack = !!s.crack;
-      const bottom = s.thin ? top - 1.2 : s.slab || crack ? top - 4 : -14, yTop = top - 0.5;
+      const bottom = s.thin ? top - 1.2 : s.slab || crack ? top - 4 : -18, yTop = top - 0.5;
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, (yTop - bottom) / 4), roughness: 0.95 });
       // Bajo el agua la superficie es tierra, no hierba
       const topTex = s.wade ? T.side : T.top;
@@ -299,7 +299,7 @@ export function buildLane(lv, zi, T, chunkOf) {
         up.push([x, y]); dn.push([x, y - 0.5]);
       }
       dn.reverse();
-      prism(G, [[s.x0, -14], [s.x1, -14], ...dn], -2, 4, sideM);
+      prism(G, [[s.x0, -18], [s.x1, -18], ...dn], -2, 4, sideM);
       prism(G, [...up, ...dn], -2.2, 4.4, topM);
       if (zi === 0) addGrassSurf(G, { x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: (x) => slopeAt(s, x) });
     } else if (s.kind === 'spring') {

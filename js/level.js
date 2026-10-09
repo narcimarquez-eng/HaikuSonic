@@ -307,17 +307,22 @@ export function buildLevel(zi, ai) {
 
   // Cuevas secretas con tubo: una losa agrietada en la pista. Rodando se rompe y el jugador cae al tubo, que atraviesa la
   // tierra y vuelve a la pista. Andando se cruza la losa sin caer. Cada forma pide algo distinto:
-  //  - bajada: baja hasta un fondo largo y llano, y sube de vuelta a la pista
+  //  - bajada: baja unos 9 bajo la pista, por un fondo llano, y sube de vuelta
+  //  - profunda: baja unos 15 bajo la pista (bajo tierra, muy hondo) y sube de vuelta; cualquier velocidad sirve
   //  - escalones: repisas a distintas alturas, unas que bajan y otras que suben, a lo largo del tubo
   //  - subida: se hunde poco y sube por la tierra hasta una plataforma sobre la pista (entra a buena velocidad)
   //  - cielo: se hunde y sale disparada hacia arriba por un arco de 70°, y cae sobre la pista de delante
-  // Las curvas son cosenos entre dos alturas (tangente horizontal en sus extremos); el arco de salida, un trozo de
-  // círculo. Las formas que quedan bajo la pista se recorren con cualquier velocidad de entrada. Las que salen por
-  // arriba fijan una velocidad mínima al entrar (minPv), para que el arco llegue a su final
-  const TUBE_KINDS = ['bajada', 'escalones', 'subida', 'cielo'];
-  // Las formas salen por tandas barajadas: cada tanda trae las cuatro, así que las cuevas de una fase son distintas
-  let tubeBag = [];
+  //  - mirador: sale disparada hacia un mirador 8.5 sobre la pista, con diez anillos; llega con la velocidad de la franja del tubo o con zapatillas
+  //  - doble: dos caminos. Rodando, la losa cae al tubo profundo; andando, un muelle lanza a un mirador
+  // Las curvas son cosenos entre dos alturas (tangente horizontal en sus extremos); los arcos de salida, trozos de
+  // círculo. Si el jugador entra sin velocidad para llegar a la salida, se queda sin fuerza y cae sobre la pista
+  // (pathStep): ninguna forma castiga la entrada lenta, solo impide llegar arriba
+  const TUBE_KINDS = ['bajada', 'profunda', 'escalones', 'subida', 'cielo', 'mirador', 'doble'];
+  // Las formas salen por tandas barajadas: cada tanda trae las siete. La primera cueva de cada acto abre con una forma
+  // distinta (por orden), así las fases seguidas no repiten
+  let tubeBag = [], tubeFirst = (zi * 3 + ai) % TUBE_KINDS.length;
   const nextTube = () => {
+    if (tubeFirst >= 0) { const k = TUBE_KINDS[tubeFirst]; tubeFirst = -1; return k; }
     if (!tubeBag.length) {
       tubeBag = TUBE_KINDS.slice();
       for (let i = tubeBag.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [tubeBag[i], tubeBag[j]] = [tubeBag[j], tubeBag[i]]; }
@@ -325,7 +330,8 @@ export function buildLevel(zi, ai) {
     return tubeBag.pop();
   };
   const tubeSec = (kind) => {
-    const W = DROP_W, Xs = x + rnd(10, 14);
+    const W = DROP_W, mirador = kind === 'mirador', deep = kind === 'profunda' || kind === 'doble';
+    const Xs = x + (mirador ? rnd(24, 26) : rnd(10, 14));    // el mirador deja sitio para coger antes las zapatillas
     const pts = [[Xs, top]];
     let cx = Xs, cy = top;
     const seg = (w, d) => {                  // coseno hasta la profundidad d bajo la pista (d < 0: por encima)
@@ -340,10 +346,13 @@ export function buildLevel(zi, ai) {
       }
       cx += R * Math.sin(phi); cy += R * (1 - Math.cos(phi));
     };
-    let minPv = 0, exitH = 0;                // velocidad mínima al entrar y altura de la salida sobre la pista
+    let exitH = 0;                           // altura de la salida (o del mirador) sobre la pista
     const plateau = kind === 'subida';
     if (kind === 'bajada') {
       const d = rnd(8, 9.5);
+      seg(rnd(16, 19), d); seg(rnd(8, 11), d); seg(rnd(15, 18), 0);
+    } else if (deep) {                       // bajo tierra, unos 15 bajo la pista (dentro del tubo no hay caída al vacío)
+      const d = rnd(14, 15);
       seg(rnd(16, 19), d); seg(rnd(8, 11), d); seg(rnd(15, 18), 0);
     } else if (kind === 'escalones') {
       const a = rnd(2, 3), b = rnd(6.5, 8), c = rnd(1.2, 2);
@@ -351,15 +360,18 @@ export function buildLevel(zi, ai) {
       seg(rnd(4, 5), c); seg(rnd(6, 8), c); seg(rnd(4, 5), 0);
     } else if (kind === 'subida') {
       seg(rnd(7, 9), rnd(5, 6.5)); seg(rnd(18, 22), -3.5);     // se hunde y sube casi todo el trecho por la tierra
-      minPv = 22; exitH = 3.5;
+      exitH = 3.5;
+    } else if (mirador) {                    // hueco poco profundo y arco de 80°: sale a unos 5 sobre la pista; a 28 o más el vuelo
+      seg(rnd(4, 5), rnd(1.5, 2)); arc(rnd(8, 8.6), 80 * Math.PI / 180);   // sube unos 10 y cae en el mirador
+      exitH = 9;
     } else {                                 // cielo
       seg(rnd(7, 9), rnd(5.5, 6.5)); seg(rnd(7, 9), rnd(1.5, 2.5));
       arc(rnd(8.5, 9.5), 70 * Math.PI / 180);
-      minPv = 24; exitH = cy - top;
+      exitH = cy - top;
     }
     const Xe = cx;
     const pt = addPath(pts, 'snake');
-    pt.form = kind; pt.minPv = minPv;
+    pt.form = kind; pt.top = top;            // pt.top: sin fuerza por encima de la pista, el jugador cae de vuelta (pathStep)
     pt.fall = [Xs - 1, Xs + W + 1];          // boca: por aquí entra quien cae por la losa rota
     // Losa agrietada, pasillo que la precede y techo de la cueva (la losa tapa el tubo desde la pista)
     pushGround(x, Xs - 6, top);
@@ -367,11 +379,22 @@ export function buildLevel(zi, ai) {
     S.push({ kind: 'ground', x0: Xs, x1: Xs + W, y0: -4, y1: top, crack: true, noEnemy: true });
     S.push({ kind: 'ground', x0: Xs + W, x1: Xe, y0: top - 4, y1: top, slab: true, thin: true, noEnemy: true });
     pathRings(pt, [0.08, 0.2, 0.33, 0.45, 0.58, 0.7, 0.83, 0.95]);
-    // Potenciadores: en el punto más bajo del tubo, o sobre la pista de salida (la subida y el cielo)
+    // Potenciadores: en el punto más bajo del tubo (las formas que salen por arriba lo dejan para la pista de salida)
     const low = pts.reduce((a, q) => (q[0] > Xs + 2 && q[0] < Xe - 2 && q[1] < a[1] ? q : a), [0, Infinity]);
-    if (!plateau && kind !== 'cielo') itemAt(low[0], low[1] + 1, randItem());
+    if (!plateau && !mirador && kind !== 'cielo') itemAt(low[0], low[1] + 1, randItem());
+    if (mirador) {                           // zapatillas antes de la losa: otra forma de llegar (la franja del tubo también basta)
+      itemAt(Xs - 16, top + 1.3, 'speed');
+      S.push({ kind: 'platform', x0: Xe + 1.5, x1: Xe + 14.5, y0: top + 6.3, y1: top + 8.5 });   // mirador de una cara: el vuelo sube por delante de su borde y cae sobre él
+      ringLine(Xe + 4.5, Xe + 13.5, top + 9.4, 10);     // a ras del mirador: se cogen andando, desde donde cae el vuelo
+    }
+    if (kind === 'doble') {                  // andando se cruza la losa y un muelle lanza a un mirador sobre la pista de salida
+      const sp = Xs + W + 3;
+      spring(sp, top);
+      S.push({ kind: 'platform', x0: sp + 8, x1: sp + 28, y0: top + 5.3, y1: top + 7.5 });
+      ringLine(sp + 10, sp + 26, top + 8.9, 6);
+    }
     lv.secrets.push({ kind: 'tube', path: pt, x0: Xs, x1: Xe + (plateau ? 16 : 0), y0: top - 10, y1: top + exitH + 1, found: false });
-    lv.caves.push({ x0: Xs, x1: Xe, top, form: kind, path: pt, gap: [Xs, Xs + W] });
+    lv.caves.push({ x0: Xs, x1: mirador ? Xe + 15 : Xe, top, form: kind, path: pt, gap: [Xs, Xs + W] });
     if (plateau) {
       x = mesa(Xe, exitH, rnd(14, 16), rnd(8, 9));    // plataforma sobre la pista a donde sube el tubo
       itemAt(Xe + 5, top + exitH + 1.3, randItem());

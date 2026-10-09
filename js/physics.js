@@ -312,6 +312,14 @@ function pathStep(dt) {
     return;
   }
   const r = pathAt(pt, p.s);
+  // Un tubo que sube por encima de la pista sin velocidad para llegar a su salida: el jugador se queda sin fuerza y cae
+  // sobre la pista de debajo (la de la cueva o la de fuera). El umbral es 0.1 sobre la pista: los tubos que no suben de
+  // ahí nunca caen aquí
+  if (p.pv < 0.5 && pt.top !== undefined && r.P[1] > pt.top + 0.1) {
+    p.path = null; p.x = r.P[0] + r.N[0] * 0.5; p.y = r.P[1] + r.N[1] * 0.5;
+    p.vx = 0; p.vy = 0; p.grounded = false; p.groundSolid = null;
+    return;
+  }
   p.x = r.P[0] + r.N[0] * 0.5; p.y = r.P[1] + r.N[1] * 0.5;
   p.vx = p.pv * r.T[0]; p.vy = p.pv * r.T[1];
 }
@@ -326,7 +334,7 @@ function arcStep(p, s, dt) {
 
 // Entrada a un tubo: el jugador lo recorre con la velocidad pv a lo largo de su trayectoria
 function enterTube(p, pt, pv) {
-  p.path = pt; p.s = 0; p.pv = Math.max(pv, pt.minPv || 0);
+  p.path = pt; p.s = 0; p.pv = pv;
   p.x = pt.x0; p.y = pt.y0 + 0.5;
   p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
   p.arc = null; p.kArc = 1;
@@ -645,7 +653,7 @@ export function stepWorld(dt) {
   }
 
   // Caída al vacío
-  if (p.y < lv.killY) { die(); if (G.mode !== 'play') return; }
+  if (p.y < lv.killY && !p.path) { die(); if (G.mode !== 'play') return; }   // dentro de un tubo no hay caída al vacío
 
   // Meta
   if (p.x >= lv.goalX) G.onComplete();
