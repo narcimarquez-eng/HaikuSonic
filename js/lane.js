@@ -160,19 +160,33 @@ function buildGallery(gl, T, zi, chunkOf) {
   for (const f of [0.3, 0.7]) mesh(G, UNIT_SPHERE, lampM, inX0 + span * f, gl.yF + 2.6, -1.7, 0.22).castShadow = false;
 }
 
-// Cueva de un tubo secreto: pared de roca detrás del tubo y estalactitas bajo la losa fina
+// Tubo secreto dentro de la tierra: una cara de tierra detrás del tubo y otra delante, con un hueco con la forma del
+// tubo y la boca de la losa rota. Así el tubo se ve atravesando la tierra y no una sala abierta
 function buildCave(c, T, zi, chunkOf) {
-  const cx = (c.x0 + c.x1) / 2, w = c.x1 - c.x0, G = chunkOf(cx);
-  const wallM = new THREE.MeshStandardMaterial({ map: tiled(zi === 1 ? T.side : T.rock, w / 6, 2), color: WALL_HEX[zi], roughness: 1 });
-  addBox(G, wallM, cx, c.top - 1.2 - c.depth / 2, -1.9, w, c.depth, 0.4);
-  const rnd = mulberry32(Math.round(c.x0 * 13) + zi * 57);
-  const stalM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, 1, 1), color: 0x8a8478, roughness: 1 });
-  const stal = [];
-  for (let i = 0; i < Math.round(w / 5); i++) {
-    const h = 0.8 + rnd() * 1.2;
-    stal.push({ x: c.x0 + rnd() * w, y: c.top - 1.2 - h / 2, z: -1.0 - rnd() * 0.5, sx: 0.3 + rnd() * 0.2, sy: h, sz: 0.3, rx: Math.PI });
-  }
-  instanced(G, UNIT_CONE, stalM, stal);
+  const BOTTOM = -14, w = c.x1 - c.x0, h = c.top - BOTTOM, cx = (c.x0 + c.x1) / 2, cy = (c.top + BOTTOM) / 2, G = chunkOf(cx);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, h / 4), color: 0x9a9086, roughness: 1 }));
+  back.position.set(cx, cy, -1.9);
+  G.add(back);
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, h / 4), alphaMap: caveHoles(c, BOTTOM), alphaTest: 0.5, roughness: 0.95 }));
+  front.position.set(cx, cy, 2.05);
+  G.add(front);
+}
+
+// Mapa de transparencia de la cara de delante: negro donde pasa el tubo (su trazo, de radio TUBE_R) y en la boca de la
+// losa rota; el resto es tierra
+function caveHoles(c, bottom) {
+  const PPU = 16, W = Math.ceil((c.x1 - c.x0) * PPU), H = Math.ceil((c.top - bottom) * PPU);
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2 * TUBE_R * PPU; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  c.path.pts.forEach(([x, y], i) => { const px = (x - c.x0) * PPU, py = (c.top - y) * PPU; if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+  ctx.stroke();
+  ctx.fillStyle = '#000';
+  ctx.fillRect((c.gap[0] - c.x0) * PPU, 0, (c.gap[1] - c.gap[0]) * PPU, 0.6 * PPU);
+  return new THREE.CanvasTexture(cv);
 }
 
 // Arco de cuadros detrás de cada bucle: una pared con un agujero circular por donde pasa el lazo y una abertura
@@ -260,7 +274,7 @@ export function buildLane(lv, zi, T, chunkOf) {
       const topTex = s.wade ? T.side : T.top;
       const edgeM = new THREE.MeshStandardMaterial({ map: tiled(topTex, w / 4, 0.25), roughness: 0.9 });
       const topM = new THREE.MeshStandardMaterial({ map: tiled(topTex, w / 4, 1.1), roughness: 0.85 });
-      const boxes = [addBox(G, sideM, cx, (bottom + yTop) / 2, 0, w, yTop - bottom, 4)];
+      const boxes = s.thin ? [] : [addBox(G, sideM, cx, (bottom + yTop) / 2, 0, w, yTop - bottom, 4)];   // la losa de una cueva no tapa el tubo
       boxes.push(addBox(G, [edgeM, edgeM, topM, sideM, edgeM, edgeM], cx, top - 0.25, 0, w, 0.5, 4.4));
       if (crack) {
         const seamM = new THREE.MeshStandardMaterial({ color: 0x3b2e22, roughness: 1 });

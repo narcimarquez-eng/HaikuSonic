@@ -303,10 +303,11 @@ function pathStep(dt) {
   p.pv += -GRAVITY * q.T[1] * dt;
   p.s += p.pv * dt;
   if (p.s >= pt.L || p.s <= 0) {                        // sale por un extremo: vuelve a la pista
-    const end = p.s >= pt.L ? pt.pts[pt.pts.length - 1] : pt.pts[0];
+    const last = p.s >= pt.L;
+    const end = last ? pt.pts[pt.pts.length - 1] : pt.pts[0], T = last ? pt.T[pt.T.length - 1] : pt.T[0];
     p.path = null;
     p.x = end[0]; p.y = end[1] + 0.5;
-    p.vx = p.pv; p.vy = 0;
+    p.vx = p.pv * T[0]; p.vy = p.pv * T[1];           // por la tangente: un tubo que sube al final lanza hacia arriba
     p.grounded = false; p.groundSolid = null;
     return;
   }
@@ -325,7 +326,7 @@ function arcStep(p, s, dt) {
 
 // Entrada a un tubo: el jugador lo recorre con la velocidad pv a lo largo de su trayectoria
 function enterTube(p, pt, pv) {
-  p.path = pt; p.s = 0; p.pv = pv;
+  p.path = pt; p.s = 0; p.pv = Math.max(pv, pt.minPv || 0);
   p.x = pt.x0; p.y = pt.y0 + 0.5;
   p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
   p.arc = null; p.kArc = 1;
@@ -524,7 +525,8 @@ export function stepWorld(dt) {
 
   stepPlayer(dt);
   for (const z of lv.secrets) {
-    if (!z.found && p.x >= z.x0 && p.x <= z.x1 && p.y >= z.y0 && p.y <= z.y1) {
+    const inside = z.path ? p.path === z.path : p.x >= z.x0 && p.x <= z.x1 && p.y >= z.y0 && p.y <= z.y1;
+    if (!z.found && inside) {
       z.found = true; G.secretsFound++;
       if (G.onSecret) G.onSecret();
     }

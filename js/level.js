@@ -305,44 +305,91 @@ export function buildLevel(zi, ai) {
     x = a + 9;
   };
 
-  // Cueva secreta con tubo ondulado: una losa agrietada en la pista. Rodando se rompe y el jugador cae al tubo, que
-  // hace ocho curvas: cuatro valles de 7.5 a 9.5 bajo la pista, tres crestas a poca altura bajo ella y una última que
-  // sube a la pista. Sale a la velocidad con que entró, a la altura de la pista, así que cae sobre ella. Andando se
-  // cruza la losa sin caer. Cada curva es un coseno entre dos alturas (tangente horizontal en sus extremos). Todas las
-  // crestas quedan bajo la pista: el tubo se recorre con cualquier velocidad de entrada
-  const snakeSec = () => {
+  // Cuevas secretas con tubo: una losa agrietada en la pista. Rodando se rompe y el jugador cae al tubo, que atraviesa la
+  // tierra y vuelve a la pista. Andando se cruza la losa sin caer. Cada forma pide algo distinto:
+  //  - bajada: baja hasta un fondo largo y llano, y sube de vuelta a la pista
+  //  - escalones: repisas a distintas alturas, unas que bajan y otras que suben, a lo largo del tubo
+  //  - subida: se hunde poco y sube por la tierra hasta una plataforma sobre la pista (entra a buena velocidad)
+  //  - cielo: se hunde y sale disparada hacia arriba por un arco de 70°, y cae sobre la pista de delante
+  // Las curvas son cosenos entre dos alturas (tangente horizontal en sus extremos); el arco de salida, un trozo de
+  // círculo. Las formas que quedan bajo la pista se recorren con cualquier velocidad de entrada. Las que salen por
+  // arriba fijan una velocidad mínima al entrar (minPv), para que el arco llegue a su final
+  const TUBE_KINDS = ['bajada', 'escalones', 'subida', 'cielo'];
+  // Las formas salen por tandas barajadas: cada tanda trae las cuatro, así que las cuevas de una fase son distintas
+  let tubeBag = [];
+  const nextTube = () => {
+    if (!tubeBag.length) {
+      tubeBag = TUBE_KINDS.slice();
+      for (let i = tubeBag.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [tubeBag[i], tubeBag[j]] = [tubeBag[j], tubeBag[i]]; }
+    }
+    return tubeBag.pop();
+  };
+  const tubeSec = (kind) => {
     const W = DROP_W, Xs = x + rnd(10, 14);
-    const depth = [rnd(7.5, 9.5), rnd(0.6, 2.4), rnd(7.5, 9.5), rnd(0.6, 2.4), rnd(7.5, 9.5), rnd(0.6, 2.4), rnd(7.5, 9.5), 0];
-    const wide = depth.map(() => rnd(6, 8));
-    const Xe = Xs + wide.reduce((a, b) => a + b, 0);
+    const pts = [[Xs, top]];
+    let cx = Xs, cy = top;
+    const seg = (w, d) => {                  // coseno hasta la profundidad d bajo la pista (d < 0: por encima)
+      const ny = top - d;
+      for (let i = 1; i <= 24; i++) pts.push([cx + w * i / 24, cy + (ny - cy) * (1 - Math.cos(Math.PI * i / 24)) / 2]);
+      cx += w; cy = ny;
+    };
+    const arc = (R, phi) => {                // trozo de círculo que sube desde la altura actual, con tangente horizontal al empezar
+      for (let i = 1; i <= 24; i++) {
+        const a = phi * i / 24;
+        pts.push([cx + R * Math.sin(a), cy + R * (1 - Math.cos(a))]);
+      }
+      cx += R * Math.sin(phi); cy += R * (1 - Math.cos(phi));
+    };
+    let minPv = 0, exitH = 0;                // velocidad mínima al entrar y altura de la salida sobre la pista
+    const plateau = kind === 'subida';
+    if (kind === 'bajada') {
+      const d = rnd(8, 9.5);
+      seg(rnd(16, 19), d); seg(rnd(8, 11), d); seg(rnd(15, 18), 0);
+    } else if (kind === 'escalones') {
+      const a = rnd(2, 3), b = rnd(6.5, 8), c = rnd(1.2, 2);
+      seg(rnd(5, 6), a); seg(rnd(6, 8), a); seg(rnd(4, 5), b); seg(rnd(6, 8), b);
+      seg(rnd(4, 5), c); seg(rnd(6, 8), c); seg(rnd(4, 5), 0);
+    } else if (kind === 'subida') {
+      seg(rnd(7, 9), rnd(5, 6.5)); seg(rnd(18, 22), -3.5);     // se hunde y sube casi todo el trecho por la tierra
+      minPv = 22; exitH = 3.5;
+    } else {                                 // cielo
+      seg(rnd(7, 9), rnd(5.5, 6.5)); seg(rnd(7, 9), rnd(1.5, 2.5));
+      arc(rnd(8.5, 9.5), 70 * Math.PI / 180);
+      minPv = 24; exitH = cy - top;
+    }
+    const Xe = cx;
+    const pt = addPath(pts, 'snake');
+    pt.form = kind; pt.minPv = minPv;
+    pt.fall = [Xs - 1, Xs + W + 1];          // boca: por aquí entra quien cae por la losa rota
+    // Losa agrietada, pasillo que la precede y techo de la cueva (la losa tapa el tubo desde la pista)
     pushGround(x, Xs - 6, top);
     pushGround(Xs - 6, Xs, top, { boost: 1, noEnemy: true });   // franja de aceleración: la losa se rompe a buena velocidad
     S.push({ kind: 'ground', x0: Xs, x1: Xs + W, y0: -4, y1: top, crack: true, noEnemy: true });
     S.push({ kind: 'ground', x0: Xs + W, x1: Xe, y0: top - 4, y1: top, slab: true, thin: true, noEnemy: true });
-    const pts = [[Xs, top]];
-    let cx = Xs, cy = top;
-    const xEnd = [];
-    depth.forEach((d, k) => {
-      const ny = top - d;
-      for (let i = 1; i <= 24; i++) pts.push([cx + wide[k] * i / 24, cy + (ny - cy) * (1 - Math.cos(Math.PI * i / 24)) / 2]);
-      cx += wide[k]; cy = ny; xEnd.push(cx);
-    });
-    const pt = addPath(pts, 'snake');
-    pt.fall = [Xs - 1, Xs + W + 1];                 // boca: por aquí entra quien cae por la losa rota
     pathRings(pt, [0.08, 0.2, 0.33, 0.45, 0.58, 0.7, 0.83, 0.95]);
-    itemAt(xEnd[2], top - depth[2] + 1, randItem());   // potenciadores en el segundo y el cuarto valle
-    itemAt(xEnd[6], top - depth[6] + 1, 'life');
-    lv.secrets.push({ kind: 'tube', x0: Xs, x1: Xe, y0: top - 10.5, y1: top - 0.2, found: false });
-    lv.caves.push({ x0: Xs, x1: Xe, top, depth: 11 });
-    x = Xe;
-    runSec(rnd(18, 24), true);                    // pista llana tras la salida: el jugador sale rápido y tiene sitio para reaccionar
+    // Potenciadores: en el punto más bajo del tubo, o sobre la pista de salida (la subida y el cielo)
+    const low = pts.reduce((a, q) => (q[0] > Xs + 2 && q[0] < Xe - 2 && q[1] < a[1] ? q : a), [0, Infinity]);
+    if (!plateau && kind !== 'cielo') itemAt(low[0], low[1] + 1, randItem());
+    lv.secrets.push({ kind: 'tube', path: pt, x0: Xs, x1: Xe + (plateau ? 16 : 0), y0: top - 10, y1: top + exitH + 1, found: false });
+    lv.caves.push({ x0: Xs, x1: Xe, top, form: kind, path: pt, gap: [Xs, Xs + W] });
+    if (plateau) {
+      x = mesa(Xe, exitH, rnd(14, 16), rnd(8, 9));    // plataforma sobre la pista a donde sube el tubo
+      itemAt(Xe + 5, top + exitH + 1.3, randItem());
+      ringLine(Xe + 2, Xe + 12, top + exitH + 1.4, 5);
+    } else {
+      x = Xe;
+      if (kind === 'cielo') {                // anillos en el aire, donde cae el que sale disparado
+        ringArc(Xe + 4, top + 3.6, 6, 5);
+        itemAt(Xe + 5, top + 1.3, randItem());
+      }
+    }
+    runSec(rnd(18, 24), true);               // pista llana tras la salida: el jugador sale rápido y tiene sitio para reaccionar
   };
 
-  // Cadena de tubos: una o dos cuevas seguidas, cada una con su losa agrietada
+  // Cadena de tubos: una o dos cuevas seguidas, cada una de una forma distinta
   const tunnelsSec = () => {
     if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
-    const n = rng() < 0.5 ? 1 : 2;
-    for (let i = 0; i < n; i++) snakeSec();
+    for (let i = 0, n = rng() < 0.5 ? 1 : 2; i < n; i++) tubeSec(nextTube());
   };
 
   // Rama alta: un muelle lanza a una plataforma sobre la pista (con anillos, enemigos y potenciadores) y un tubo
@@ -568,12 +615,12 @@ export function buildLevel(zi, ai) {
   runSec(rnd(24, 34), true);
   let secretPending = rng() < 0.7;      // a veces: una cámara oculta sobre la rama alta de este acto
   let cannonPending = rng() < 0.7;      // a veces: un cañón que lanza a un mirador alto
-  let snakePending = zi !== 2;          // verde e industrial: al menos una cueva secreta por fase
+  let tubePending = zi !== 2;           // verde e industrial: al menos una cueva secreta por fase
   while (x < prof.len) {
     const r = pickWeighted(prof.w, rng);
     if (secretPending && x > prof.len * 0.35) { secretPending = false; upperSec(true); continue; }
     if (cannonPending && x > prof.len * 0.4) { cannonPending = false; cannonSec(); continue; }
-    if (snakePending && x > prof.len * 0.5) { snakePending = false; snakeSec(); runSec(rnd(10, 16)); continue; }
+    if (tubePending && x > prof.len * 0.5) { tubePending = false; tubeSec(nextTube()); continue; }
     if (r === 'upper') { upperSec(false); continue; }
     if (r === 'tunnels') { tunnelsSec(); runSec(rnd(10, 16)); continue; }
     if (r === 'run') runSec(rnd(30, 60));
@@ -581,7 +628,7 @@ export function buildLevel(zi, ai) {
     else if (r === 'gap') { gapSec(); runSec(rnd(10, 16)); }
     else if (r === 'boost') boostSec(rnd(28, 40));
     else if (r === 'loop') { loopSec(); runSec(rnd(12, 18)); }
-    else if (r === 'snake') { snakeSec(); runSec(rnd(10, 16)); }
+    else if (r === 'snake') tubeSec(nextTube());
     else if (r === 'gentle') gentleSec();
     else if (r === 'step') stepSec();
     else if (r === 'ledge') ledgeSec();
