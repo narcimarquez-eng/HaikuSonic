@@ -160,6 +160,21 @@ function buildGallery(gl, T, zi, chunkOf) {
   for (const f of [0.3, 0.7]) mesh(G, UNIT_SPHERE, lampM, inX0 + span * f, gl.yF + 2.6, -1.7, 0.22).castShadow = false;
 }
 
+// Cueva de un tubo secreto: pared de roca detrás del tubo y estalactitas bajo la losa fina
+function buildCave(c, T, zi, chunkOf) {
+  const cx = (c.x0 + c.x1) / 2, w = c.x1 - c.x0, G = chunkOf(cx);
+  const wallM = new THREE.MeshStandardMaterial({ map: tiled(zi === 1 ? T.side : T.rock, w / 6, 2), color: WALL_HEX[zi], roughness: 1 });
+  addBox(G, wallM, cx, c.top - 1.2 - c.depth / 2, -1.9, w, c.depth, 0.4);
+  const rnd = mulberry32(Math.round(c.x0 * 13) + zi * 57);
+  const stalM = new THREE.MeshStandardMaterial({ map: tiled(T.rock, 1, 1), color: 0x8a8478, roughness: 1 });
+  const stal = [];
+  for (let i = 0; i < Math.round(w / 5); i++) {
+    const h = 0.8 + rnd() * 1.2;
+    stal.push({ x: c.x0 + rnd() * w, y: c.top - 1.2 - h / 2, z: -1.0 - rnd() * 0.5, sx: 0.3 + rnd() * 0.2, sy: h, sz: 0.3, rx: Math.PI });
+  }
+  instanced(G, UNIT_CONE, stalM, stal);
+}
+
 // Arco de cuadros detrás de cada bucle: una pared con un agujero circular por donde pasa el lazo y una abertura
 // abajo, por donde entra y sale la pista. El borde inferior queda a la altura del tubo, así que la pista pasa bajo él.
 const CHECK_HEX = [[0x8d6a43, 0xc9a66b], [0x4a5058, 0x6e7782], [0xb89c6c, 0xe6d3a4]];   // dos tonos de cuadros por zona
@@ -239,7 +254,7 @@ export function buildLane(lv, zi, T, chunkOf) {
       // Una losa solo llega hasta 4 unidades bajo la superficie: debajo está la galería.
       // La losa agrietada (secreta) se ve como la pista, con unas grietas finas; sus mallas se ocultan al romperse
       const crack = !!s.crack;
-      const bottom = s.slab || crack ? top - 4 : -14, yTop = top - 0.5;
+      const bottom = s.thin ? top - 1.2 : s.slab || crack ? top - 4 : -14, yTop = top - 0.5;
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, w / 4, (yTop - bottom) / 4), roughness: 0.95 });
       // Bajo el agua la superficie es tierra, no hierba
       const topTex = s.wade ? T.side : T.top;
@@ -262,8 +277,16 @@ export function buildLane(lv, zi, T, chunkOf) {
       const G = chunkOf((s.x0 + s.x1) / 2);
       const sideM = new THREE.MeshStandardMaterial({ map: tiled(T.side, 0.25, 0.25), roughness: 0.95 });
       const topM = new THREE.MeshStandardMaterial({ map: tiled(T.top, 0.25, 0.25), roughness: 0.85 });
-      prism(G, [[s.x0, -14], [s.x1, -14], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2, 4, sideM);
-      prism(G, [[s.x0, s.ya], [s.x1, s.yb], [s.x1, s.yb - 0.5], [s.x0, s.ya - 0.5]], -2.2, 4.4, topM);
+      // Un arco se dibuja con muestras de su curva cada 0.4; una rampa recta tiene solo dos (sus extremos)
+      const N = s.arc ? Math.ceil((s.x1 - s.x0) / 0.4) : 1;
+      const up = [], dn = [];
+      for (let i = 0; i <= N; i++) {
+        const x = s.x0 + (s.x1 - s.x0) * i / N, y = slopeAt(s, x);
+        up.push([x, y]); dn.push([x, y - 0.5]);
+      }
+      dn.reverse();
+      prism(G, [[s.x0, -14], [s.x1, -14], ...dn], -2, 4, sideM);
+      prism(G, [...up, ...dn], -2.2, 4.4, topM);
       if (zi === 0) addGrassSurf(G, { x0: s.x0, x1: s.x1, z0: -2, z1: 2, y: (x) => slopeAt(s, x) });
     } else if (s.kind === 'spring') {
       const G = chunkOf(s.x0);
@@ -370,6 +393,7 @@ export function buildLane(lv, zi, T, chunkOf) {
 
   // Galerías y señales de bajada
   for (const gl of lv.galleries) buildGallery(gl, T, zi, chunkOf);
+  for (const c of lv.caves) buildCave(c, T, zi, chunkOf);
   for (const pt of lv.paths) if (pt.loop) buildLoopFrame(pt, zi, T, chunkOf(pt.loop.cx));
   for (const pt of lv.paths) if (pt.kind === 'drop') buildSign(chunkOf(pt.x0 - 3), pt.x0 - 3, pt.y0 - 0.5, T);
 

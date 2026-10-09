@@ -1,4 +1,4 @@
-// Generador de fases: secciones (tramos con objetos, colinas, huecos, bucles, bajadas a una galería subterránea,
+// Generador de fases: secciones (tramos con objetos, colinas con arcos, huecos, bucles, cuevas secretas con tubo,
 // mesetas con muelle y escaladas)
 import { mulberry32, clamp, lerp, pickWeighted } from './util.js';
 import { makeBot } from './bots.js';
@@ -11,6 +11,7 @@ export const TUBE_R = 1.6;    // radio interior del tubo que rodea la trayectori
 export const SPRING_V = 26;
 export const DROP_W = 6;      // ancho horizontal de una bajada (y de una subida)
 export const DROP_D = 7;      // profundidad de una bajada: hasta el suelo de la galería
+export const ARC_LIP = 70 * Math.PI / 180;   // ángulo del labio de un arco: casi vertical, así el erizo sale hacia arriba
 // Robots nuevos por zona: frecuencia en las secciones y pesos al repartir enemigos sueltos (verde, industrial, acuática)
 const ROBOT_RATE = [0.22, 0.4, 0.3];
 const ROBOT_W = [{ shield: 3, bomb: 2, laser: 1 }, { charger: 3, shield: 3, bomb: 3, laser: 1 }, { support: 3, bomb: 2, shield: 1, laser: 1 }];
@@ -22,14 +23,14 @@ const WALL = 8.5;             // distancia del muelle al muro de una meseta: a v
 // water: un hueco con agua, con muelle y meseta. lift: muelle y meseta de 4. climb: dos mesetas (4 y 8)
 const PROFILE = [
   [ // Verde: tramos, bucles, valles, arroyos, cascadas, pinchos, charcos, mesetas, avispas y erizos
-    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 26, hills: 34, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, gallery: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
-    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 30, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, gallery: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
-    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 26, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, gallery: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
+    { len: 900, enemies: 0.45, fly: 0.2, shoot: 0.2, wasp: 0.3, hop: 0.2, spiny: 0.15, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 26, hills: 34, dip: 8, stream: 4, cascade: 3, gap: 8, boost: 6, loop: 6, snake: 5, spike: 7, water: 3, lift: 8, climb: 4 } },
+    { len: 1050, enemies: 0.55, fly: 0.25, shoot: 0.3, wasp: 0.35, hop: 0.25, spiny: 0.2, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 30, dip: 10, stream: 5, cascade: 4, gap: 7, boost: 6, loop: 10, snake: 6, spike: 9, water: 4, lift: 9, climb: 6 } },
+    { len: 1200, enemies: 0.65, fly: 0.3, shoot: 0.35, wasp: 0.4, hop: 0.3, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 26, dip: 12, stream: 6, cascade: 5, gap: 6, boost: 5, loop: 13, snake: 6, spike: 10, water: 4, lift: 10, climb: 7 } },
   ],
   [ // Industrial: cintas, huecos, valles, arroyos, pinchos, mesetas, torretas y erizos
-    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 22, hills: 28, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, gallery: 6, spike: 9, lift: 8, climb: 5 } },
-    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 28, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, gallery: 7, spike: 11, lift: 9, climb: 7 } },
-    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 24, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, gallery: 8, spike: 13, lift: 10, climb: 8 } },
+    { len: 950, enemies: 0.5, fly: 0.2, shoot: 0.3, wasp: 0.25, hop: 0.15, spiny: 0.25, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 22, hills: 28, dip: 6, stream: 3, cascade: 2, gap: 12, boost: 7, loop: 5, snake: 6, spike: 9, lift: 8, climb: 5 } },
+    { len: 1100, enemies: 0.6, fly: 0.25, shoot: 0.35, wasp: 0.3, hop: 0.2, spiny: 0.3, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 18, hills: 28, dip: 8, stream: 4, cascade: 3, gap: 14, boost: 6, loop: 8, snake: 7, spike: 11, lift: 9, climb: 7 } },
+    { len: 1250, enemies: 0.7, fly: 0.3, shoot: 0.4, wasp: 0.35, hop: 0.25, spiny: 0.35, w: { upper: 6, gentle: 18, step: 6, ledge: 5, tunnels: 8, run: 14, hills: 24, dip: 10, stream: 5, cascade: 4, gap: 15, boost: 5, loop: 10, snake: 8, spike: 13, lift: 10, climb: 8 } },
   ],
   [ // Acuática: balsas, bucles, valles con laguna, pinchos de coral, agua y mesetas
     { len: 1000, enemies: 0.5, fly: 0.3, shoot: 0.1, wasp: 0.3, hop: 0.1, spiny: 0.1, w: { upper: 6, run: 20, hills: 8, dip: 8, gap: 14, boost: 4, loop: 7, spike: 6, water: 9, lift: 6, climb: 4 } },
@@ -38,8 +39,21 @@ const PROFILE = [
   ],
 ];
 
-// Altura de la rampa en x
-export const slopeAt = (s, x) => s.ya + (s.yb - s.ya) * clamp((x - s.x0) / (s.x1 - s.x0), 0, 1);
+// Altura de la rampa en x. Un arco (s.arc, radio R) sube en curva desde ya, con tangente horizontal, hasta yb
+export function slopeAt(s, x) {
+  if (s.arc) {
+    const u = clamp(x - s.x0, 0, s.x1 - s.x0);
+    return s.ya + s.arc.R - Math.sqrt(s.arc.R * s.arc.R - u * u);
+  }
+  return s.ya + (s.yb - s.ya) * clamp((x - s.x0) / (s.x1 - s.x0), 0, 1);
+}
+// Pendiente (dy/dx) de la rampa en x: en un arco, la de la curva en ese punto (más allá del labio, plana)
+export function slopeGrad(s, x) {
+  if (!s.arc) return (s.yb - s.ya) / (s.x1 - s.x0);
+  if (x >= s.x1) return 0;
+  const u = clamp(x - s.x0, 0, s.x1 - s.x0);
+  return u / Math.sqrt(s.arc.R * s.arc.R - u * u);
+}
 
 // Altura de la superficie bajo la coordenada x (sin contar plataformas, muelles ni piedras)
 export function laneY(solids, x) {
@@ -111,7 +125,7 @@ export function buildLevel(zi, ai) {
   const lv = {
     zone: zi, act: ai, endX: 0, goalX: 0, goalY: 0, killY: KILL_Y[zi], t: 0,
     solids: [], enemies: [], rings: [], checkpoints: [], paths: [], galleries: [], shots: [], falls: [], items: [],
-    blasts: [], pendingKills: [], secrets: [],
+    blasts: [], pendingKills: [], secrets: [], caves: [],
   };
   const S = lv.solids;
   let x = -10, top = 0, nextCp = 60;
@@ -227,34 +241,40 @@ export function buildLevel(zi, ai) {
     x = x1;
   };
 
-  // Colinas: subidas y bajadas de rampa, suaves, empinadas o de unos 60° (verde e industrial), con un pequeño tramo
-  // plano entre ellas. Tras una pendiente de 60° que sube, a veces la cresta cae enseguida: a buena velocidad el erizo
-  // sale volando por ella. La zona acuática tiene un mar que no deja subir ni bajar tanto
+  // Colinas: arcos que suben (verde e industrial), pendientes rectas de unos 60° que bajan y subidas o bajadas suaves.
+  // Un arco empieza plano, se curva y llega al labio casi vertical: la pista sigue a la altura del labio. La zona
+  // acuática tiene un mar que no deja subir ni bajar tanto
   const hillsSec = (len) => {
     const end = x + len, lo = zi === 2 ? 0 : -2, hi = zi === 2 ? 3.2 : 6;
-    let crest = false;                                  // la pendiente siguiente baja (cresta tras una pendiente de 60°)
     while (x < end - 4) {
       const roll = rng();
-      const cliff = zi !== 2 && (crest || roll < 0.3);   // unos 60°: sube o baja en pocos metros (tras una cresta, la bajada también)
-      const steep = !cliff && roll < 0.6;
-      const rise = cliff ? rnd(4.5, 6.5) : steep ? rnd(3.5, 5) : rnd(2.5, 4.5);
-      const down = crest || rng() < 0.5;
-      const nt = clamp(top + (down ? -1 : 1) * rise, lo, hi);
-      let rising = false;
-      if (Math.abs(nt - top) > 0.3) {
-        const L = cliff ? Math.abs(nt - top) / Math.tan(rnd(56, 62) * Math.PI / 180) : steep ? rnd(7, 10) : rnd(11, 16);
-        const sl = { x0: x, x1: x + L, ya: top, yb: nt };
-        S.push({ kind: "slope", ...sl, y0: -4, y1: Math.max(top, nt) });
-        for (let i = 0; i < 4; i++) {
-          const sx = x + L * (0.2 + i * 0.2);
+      let f = rnd(3, 6), extra = {};                      // pista llana tras la pendiente
+      if (zi !== 2 && roll < 0.3 && top + 4 <= hi) {
+        const h = rnd(4, 4.8), R = h / (1 - Math.cos(ARC_LIP)), L = R * Math.sin(ARC_LIP), run = rnd(16, 20);
+        pushGround(x, x + run, top); x += run;            // carrera: de parado llega a la velocidad que pide el labio
+        const sl = { x0: x, x1: x + L, ya: top, yb: top + h, arc: { R } };
+        S.push({ kind: 'slope', ...sl, y0: -4, y1: top + h });
+        for (let i = 0; i < 3; i++) {
+          const sx = x + L * (0.3 + i * 0.22);
           lv.rings.push({ x: sx, y: slopeAt(sl, sx) + 1.3, taken: false });
         }
-        rising = nt > top;
-        x += L; top = nt;
+        x += L; top += h; f = rnd(10, 14); extra = { arcEnd: true };   // la pista llana del labio: ahí cae el que salta
+      } else {
+        const cliff = zi !== 2 && roll < 0.5, steep = roll < 0.75;   // cliff: unos 60° hacia abajo
+        const rise = cliff ? rnd(4.5, 6.5) : steep ? rnd(3.5, 5) : rnd(2.5, 4.5);
+        const nt = clamp(top + (cliff || rng() < 0.5 ? -1 : 1) * rise, lo, hi);
+        if (Math.abs(nt - top) > 0.3) {
+          const L = cliff ? Math.abs(nt - top) / Math.tan(rnd(56, 62) * Math.PI / 180) : steep ? rnd(7, 10) : rnd(11, 16);
+          const sl = { x0: x, x1: x + L, ya: top, yb: nt };
+          S.push({ kind: 'slope', ...sl, y0: -4, y1: Math.max(top, nt) });
+          for (let i = 0; i < 4; i++) {
+            const sx = x + L * (0.2 + i * 0.2);
+            lv.rings.push({ x: sx, y: slopeAt(sl, sx) + 1.3, taken: false });
+          }
+          x += L; top = nt;
+        }
       }
-      crest = cliff && rising && rng() < 0.5;
-      const f = crest ? rnd(0.5, 1.5) : rnd(3, 6);
-      pushGround(x, x + f, top);
+      pushGround(x, x + f, top, extra);
       x += f;
     }
   };
@@ -285,48 +305,40 @@ export function buildLevel(zi, ai) {
     x = a + 9;
   };
 
-  // Bajada: un tubo lleva de la superficie a una galería bajo la pista; otro tubo la devuelve arriba.
-  // La losa de la superficie queda encima de la galería, así que el atajo es opcional (se puede saltar el pozo).
-  // La galería es un túnel rápido: su suelo entero es franja de aceleración.
-  // Secreta (trap): en vez del pozo, una losa agrietada en la pista. Andando se cruza; rodando se hunde y el jugador
-  // cae a la galería, que tiene dos potenciadores. Es la única entrada.
-  // Galería secreta: la entrada es una losa agrietada en la pista (andando se cruza; rodando se hunde y el jugador
-  // cae a la galería). No hay pozo a la vista. Dentro, un potenciador y anillos; un tubo la devuelve a la pista
-  const gallerySec = () => {
-    const W = DROP_W, D = DROP_D, yF = top - D;
-    const Xs = x + rnd(12, 18);                     // losa agrietada, en la superficie
-    const G = rnd(40, 50);                           // longitud de la galería
-    const Xr = Xs + W + G;                           // boca de subida, en el suelo de la galería
-    pushGround(x, Xs, top);
-    ringArc(x + (Xs - x) * 0.5, top + 1.2, 4.5, 5);
+  // Cueva secreta con tubo ondulado: una losa agrietada en la pista. Rodando se rompe y el jugador cae al tubo, que
+  // tiene cinco curvas, arriba y abajo, y vuelve a salir a la pista. Andando se cruza la losa sin caer.
+  // Desde la pista no se ve nada: la losa tapa la cueva. Cada curva es un coseno entre dos alturas (tangente horizontal
+  // en sus extremos). Ningún valle queda más alto que la boca, así que el tubo se recorre con cualquier velocidad
+  const SNAKE = [[10, 7], [9, 2.5], [10, 8], [9, 2], [9, 0.5]];   // [ancho, profundidad bajo la pista] de cada curva
+  const snakeSec = () => {
+    const W = DROP_W, Xs = x + rnd(10, 14), Xe = Xs + SNAKE.reduce((a, c) => a + c[0], 0);
+    pushGround(x, Xs - 6, top);
+    pushGround(Xs - 6, Xs, top, { boost: 1, noEnemy: true });   // franja de aceleración: la losa se rompe a buena velocidad
     S.push({ kind: 'ground', x0: Xs, x1: Xs + W, y0: -4, y1: top, crack: true, noEnemy: true });
-    S.push({ kind: 'wall', x0: Xs - 0.6, x1: Xs, y0: yF - 8, y1: top - 4 });   // pared del fondo: no se sale por el lado
-    pathRings(addPath(slidePts(Xr, yF + 0.5, W, D, 1), 'rise'), [0.3, 0.5, 0.7]);
-    // Suelo de la galería: franja de aceleración de extremo a extremo
-    S.push({ kind: 'ground', x0: Xs, x1: Xr - 8, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
-    S.push({ kind: 'ground', x0: Xr - 8, x1: Xr - 1, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
-    S.push({ kind: 'ground', x0: Xr - 1, x1: Xr + W, y0: yF - 8, y1: yF, gallery: true, boost: 1 });
-    // Losa de la superficie sobre la galería y su techo: no se puede saltar a través de ella
-    // La losa cubre también la boca de subida: no queda un hueco en la pista por el que caer al final de la galería
-    S.push({ kind: 'ground', x0: Xs + W, x1: Xr + W, y0: top - 4, y1: top, slab: true });
-    S.push({ kind: 'ceiling', x0: Xs + W, x1: Xr + W, y0: top - 4, y1: top - 3.9, base: top, slabCeil: true });
-    lv.galleries.push({ xs: Xs, xr: Xr, w: W, yF, top });
-    ringLine(Xs + W + 2, Xr - 2, yF + 1.2, 8);
-    itemAt((Xs + W + Xr) / 2 + rnd(-4, 4), yF + 1.3, randItem());
-    lv.secrets.push({ kind: 'gallery', x0: Xs, x1: Xr + W, y0: yF - 8, y1: top - 4, found: false });
-    if (rng() < 0.6) {
-      lv.enemies.push({ x: rnd(Xs + W + 3, Xr - 10), minX: Xs + W + 1, maxX: Xr - 9, dir: rng() < 0.5 ? -1 : 1, alive: true, phase: rng() * 6, y: yF, r: 0.63 });
+    S.push({ kind: 'ground', x0: Xs + W, x1: Xe, y0: top - 4, y1: top, slab: true, thin: true, noEnemy: true });
+    const pts = [[Xs, top - 0.5]];
+    let cx = Xs, cy = top - 0.5;
+    for (const [w, d] of SNAKE) {
+      const ny = top - d;
+      for (let i = 1; i <= 24; i++) pts.push([cx + w * i / 24, cy + (ny - cy) * (1 - Math.cos(Math.PI * i / 24)) / 2]);
+      cx += w; cy = ny;
     }
-    if (rng() < 0.35) lv.enemies.push(makeBot('spider', rnd(Xs + W + 3, Xr - 4), yF + 1.9, rng, { ceilY: top - 4, floorY: yF, minX: Xs + W, maxX: Xr }));
-    if (rng() < 0.5) boulder(rnd(Xs + W + 6, Xr - 14), yF);
-    x = Xr + W;
+    const pt = addPath(pts, 'snake');
+    pt.fall = [Xs - 1, Xs + W + 1];                 // boca: por aquí entra quien cae por la losa rota
+    pathRings(pt, [0.12, 0.3, 0.48, 0.66, 0.84]);
+    const v1 = Xs + SNAKE[0][0], v2 = v1 + SNAKE[1][0] + SNAKE[2][0];   // los dos valles
+    itemAt(v1, top - 6, randItem());
+    itemAt(v2, top - 7, 'life');
+    lv.secrets.push({ kind: 'tube', x0: Xs, x1: Xe, y0: top - 9, y1: top, found: false });
+    lv.caves.push({ x0: Xs, x1: Xe, top, depth: 9.5 });
+    x = Xe;
   };
 
-  // Cadena de túneles: dos o tres bajadas a galerías seguidas, cada una con su potenciador
+  // Cadena de tubos: una o dos cuevas seguidas, cada una con su losa agrietada
   const tunnelsSec = () => {
     if (x > nextCp) { lv.checkpoints.push({ x: x + 2, y: top, hit: false }); nextCp = x + 170; }
-    const n = rng() < 0.5 ? 2 : 3;
-    for (let i = 0; i < n; i++) gallerySec();
+    const n = rng() < 0.5 ? 1 : 2;
+    for (let i = 0; i < n; i++) snakeSec();
   };
 
   // Rama alta: un muelle lanza a una plataforma sobre la pista (con anillos, enemigos y potenciadores) y un tubo
@@ -552,12 +564,12 @@ export function buildLevel(zi, ai) {
   runSec(rnd(24, 34), true);
   let secretPending = rng() < 0.7;      // a veces: una cámara oculta sobre la rama alta de este acto
   let cannonPending = rng() < 0.7;      // a veces: un cañón que lanza a un mirador alto
-  let galleryPending = zi !== 2;        // verde e industrial: al menos una galería secreta por fase
+  let snakePending = zi !== 2;          // verde e industrial: al menos una cueva secreta por fase
   while (x < prof.len) {
     const r = pickWeighted(prof.w, rng);
     if (secretPending && x > prof.len * 0.35) { secretPending = false; upperSec(true); continue; }
     if (cannonPending && x > prof.len * 0.4) { cannonPending = false; cannonSec(); continue; }
-    if (galleryPending && x > prof.len * 0.5) { galleryPending = false; gallerySec(); runSec(rnd(10, 16)); continue; }
+    if (snakePending && x > prof.len * 0.5) { snakePending = false; snakeSec(); runSec(rnd(10, 16)); continue; }
     if (r === 'upper') { upperSec(false); continue; }
     if (r === 'tunnels') { tunnelsSec(); runSec(rnd(10, 16)); continue; }
     if (r === 'run') runSec(rnd(30, 60));
@@ -565,7 +577,7 @@ export function buildLevel(zi, ai) {
     else if (r === 'gap') { gapSec(); runSec(rnd(10, 16)); }
     else if (r === 'boost') boostSec(rnd(28, 40));
     else if (r === 'loop') { loopSec(); runSec(rnd(12, 18)); }
-    else if (r === 'gallery') { galleryPending = false; gallerySec(); runSec(rnd(10, 16)); }
+    else if (r === 'snake') { snakeSec(); runSec(rnd(10, 16)); }
     else if (r === 'gentle') gentleSec();
     else if (r === 'step') stepSec();
     else if (r === 'ledge') ledgeSec();
@@ -627,6 +639,7 @@ export function buildLevel(zi, ai) {
       const flying = type === "fly" || type === "wasp" || type === "housefly" || type === "support";
       const s = flat.find((q) => ex >= q.x0 + 3 && ex <= q.x1 - 3);
       if (!flying && !s) continue;
+      if (lv.caves.some((c) => ex > c.x0 - 14 && ex < c.x1 + 14)) continue;   // nada cerca de una cueva: un volador o una torreta alcanzan el tubo
       if ((type === "shoot" || type === "laser") && (!s || ex - s.x0 < 16)) continue;
       if (enemyNear(ex) || trapNear(ex - 4, ex + 4)) continue;
       const seg = flying ? { x0: ex - 4, x1: ex + 4, y1: laneY(S, ex) } : s;
@@ -634,6 +647,8 @@ export function buildLevel(zi, ai) {
       have++;
     }
   }
+  // Ningún bicho cerca de una cueva, tampoco los de las secciones anteriores: su patrulla o su alcance llegan al tubo
+  lv.enemies = lv.enemies.filter((e) => !lv.caves.some((c) => Math.max(e.x, e.maxX ?? e.x) + 14 > c.x0 && Math.min(e.x, e.minX ?? e.x) - 14 < c.x1));
   // Ningún suelo puede quedar con la base por encima de su superficie (un valle o un arroyo bajo -4)
   for (const q of S) if (q.kind === 'ground' && q.y0 >= q.y1) q.y0 = q.y1 - 4;
   return lv;

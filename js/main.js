@@ -105,7 +105,7 @@ function resetPlayer() {
   Object.assign(player, {
     x: 0, y: 2, vx: 0, vy: 0, rings: 0, facing: 1, grounded: false, groundSolid: null,
     jumping: false, spinAir: false, path: null, s: 0, pv: 0, crouch: false, charge: 0,
-    dashT: 0, rolling: false, roll: 0, invT: 0, shield: false, speedT: 0, starT: 0, ramp: null,
+    dashT: 0, rolling: false, roll: 0, invT: 0, shield: false, speedT: 0, starT: 0, arc: null, kArc: 1,
   });
 }
 

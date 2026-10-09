@@ -1,6 +1,6 @@
 // Física: jugador, sólidos AABB con rampas, tubos, agua poco profunda y reglas (anillos, enemigos, control, meta)
 import { input, isJumpHeld, readAxisX, readDown } from './input.js';
-import { slopeAt, pathAt, laneY } from './level.js';
+import { slopeAt, slopeGrad, pathAt, laneY } from './level.js';
 import { approach, clamp } from './util.js';
 import { BLAST_R, beamOf, stepBot, updateShields, verdict } from './bots.js';
 
@@ -25,7 +25,8 @@ const SPRING_VX = 24;             // velocidad horizontal máxima al salir de un
 const ITEM_R = 1.0;               // radio para recoger un potenciador
 const POWER_T = 10;               // segundos de zapatillas y de estrella
 const SPEED_MUL = 1.35;           // multiplicador de velocidad máxima con zapatillas
-const LAUNCH_MAX = 26;            // velocidad vertical máxima al salir volando de una pendiente (a más, más alto)
+const LAUNCH_MAX = 26;            // velocidad vertical máxima al salir volando por el labio de un arco
+const LIP_VY = 13;               // velocidad vertical mínima en el labio para despegar; por debajo, sigue por la pista
 
 // Estado del jugador (se reinicia en cada fase)
 export const player = {
@@ -33,6 +34,7 @@ export const player = {
   grounded: false, groundSolid: null, jumping: false, spinAir: false,
   crouch: false, charge: 0, dashT: 0, rolling: false, roll: 0, invT: 0,
   path: null, s: 0, pv: 0, wet: false, splashT: 0,
+  arc: null, kArc: 1, gArc: 0,         // arco que se está subiendo, √(1+g²) y pendiente en su último paso
   shield: false, speedT: 0, starT: 0,   // potenciadores activos: escudo (un golpe), zapatillas y estrella (segundos)
 };
 
@@ -239,6 +241,7 @@ function resolveX(p, solids, prevX) {
   const left = p.x - PW / 2, right = p.x + PW / 2;
   for (const s of solids) {
     if (s.broken) continue;
+    if (s.arcEnd) continue;                     // la pista tras un arco: su cara no frena al que sube por la curva
     // Una cara o solo techo no bloquean de lado; pinchos y agua no son sólidos (hacen daño o matan en stepWorld)
     if (s.kind === 'platform' || s.kind === 'ceiling' || s.kind === 'spikes' || s.kind === 'water') continue;
     if (top <= s.y0 + EPS || bottom >= s.y1 - STEP_UP) continue;
@@ -280,7 +283,7 @@ function resolveY(p, solids, prevBottom) {
     }
     const bottom = p.y - PH / 2;
     const slope = s.kind === 'slope';
-    const surf = slope ? slopeMax(s, p) : s.y1;
+    const surf = slope ? (s.arc ? slopeAt(s, p.x) : slopeMax(s, p)) : s.y1;
     const tol = slope ? 0.3 : 0.02;   // en rampas se "pega" al bajar
     const reach = slope ? 0.3 : 0;
     // Aterriza sólo si los pies estaban por encima de la superficie en el paso anterior;
@@ -310,6 +313,22 @@ function pathStep(dt) {
   const r = pathAt(pt, p.s);
   p.x = r.P[0] + r.N[0] * 0.5; p.y = r.P[1] + r.N[1] * 0.5;
   p.vx = p.pv * r.T[0]; p.vy = p.pv * r.T[1];
+}
+
+// Pista curva (un arco): el jugador no acelera ni frena por su cuenta. La velocidad a lo largo de la curva,
+// u = vx·√(1+g²), solo la cambia la gravedad, así que sube con la velocidad que lleva y vuelve atrás si no le basta
+function arcStep(p, s, dt) {
+  const g = slopeGrad(s, p.x), k = Math.hypot(1, g);
+  const u = p.vx * p.kArc - GRAVITY * (g / k) * dt;
+  p.vx = u / k; p.kArc = k; p.gArc = g; p.arc = s;
+}
+
+// Entrada a un tubo: el jugador lo recorre con la velocidad pv a lo largo de su trayectoria
+function enterTube(p, pt, pv) {
+  p.path = pt; p.s = 0; p.pv = pv;
+  p.x = pt.x0; p.y = pt.y0 + 0.5;
+  p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
+  p.arc = null; p.kArc = 1;
 }
 
 // Losa agrietada rota por un jugador rodando: deja de ser sólida y su dibujo desaparece
@@ -358,7 +377,10 @@ function stepPlayer(dt) {
   if (p.rolling) p.roll += p.vx * dt / 0.5;
 
   // Velocidad horizontal con momentum: sobre la velocidad de carrera (bajadas) se pierde despacio
-  if (p.grounded) {
+  const s = p.groundSolid;
+  const onArc = p.grounded && !!s && !!s.arc && !p.crouch;   // en un arco no hay control: manda la gravedad
+  if (onArc) arcStep(p, s, dt);
+  else if (p.grounded) {
     if (p.crouch) p.vx = approach(p.vx, 0, 30 * dt);
     else if (Math.abs(ax) > 0.1) {
       const reversing = Math.sign(ax) !== Math.sign(p.vx) && Math.abs(p.vx) > 1;
@@ -367,8 +389,7 @@ function stepPlayer(dt) {
     } else {
       p.vx = approach(p.vx, 0, (p.rolling ? ROLL_FRICTION : FRICTION) * dt);
     }
-    // Pendientes: la gravedad acelera al bajar y frena (menos) al subir
-    const s = p.groundSolid;
+    // Pendientes rectas: la gravedad acelera al bajar y frena (menos) al subir
     if (!p.crouch && s && s.kind === 'slope') {
       const g = (s.yb - s.ya) / (s.x1 - s.x0);
       p.vx -= GRAVITY * g * (g > 0 ? UPHILL : DOWNHILL) / (1 + g * g) * dt;
@@ -382,28 +403,22 @@ function stepPlayer(dt) {
   if (p.grounded) p.vy = -GRAVITY * dt;
   else p.vy = Math.max(p.vy - GRAVITY * dt, -MAX_FALL);
 
-  const groundedBefore = p.grounded;
   const prevX = p.x;
   p.x += p.vx * dt;
   resolveX(p, lv.solids, prevX);
   const prevBottom = p.y - PH / 2;
   p.y += p.vy * dt;
   resolveY(p, lv.solids, prevBottom);
-  // Despegue de una pendiente: si la superficie cae justo después (cresta), el jugador sale por la tangente de la
-  // rampa, así que a más velocidad sube más. Un muelle (vy positiva) no cuenta
-  if (groundedBefore && !p.grounded && p.vy <= 0 && p.ramp && Math.abs(p.x - p.ramp.x) < 4.5) {
-    p.vy = clamp(p.vx * p.ramp.g, -MAX_FALL, LAUNCH_MAX);
-  }
-  if (p.grounded && p.groundSolid && p.groundSolid.kind === 'slope') {
-    const sl = p.groundSolid, g = (sl.yb - sl.ya) / (sl.x1 - sl.x0);
-    // Cresta: tras una subida empinada, un descenso empinado que empieza enseguida despega a buena velocidad (un
-    // borde así no se pega a la pendiente): sale por la tangente de la subida
-    if (g < -1.2 && p.ramp && p.ramp.g > 1.2 && p.x - p.ramp.x < 4.5 && p.vx > 8) {
-      p.grounded = false; p.groundSolid = null;
-      p.vy = clamp(p.vx * p.ramp.g, -MAX_FALL, LAUNCH_MAX);
-    } else {
-      p.ramp = { g, x: p.x };
+  // Fin de un arco: la velocidad que llevaba sobre la curva pasa a la pista llana (no se pierde). Si va rápido, el
+  // labio la lanza hacia arriba por su tangente (vy = vx · pendiente del labio); si no, sigue por la pista. Fuera de la
+  // curva y en el aire (salto o caída) solo se olvida el arco
+  if (p.arc && !(p.grounded && p.groundSolid && p.groundSolid.arc)) {
+    if (p.grounded) {
+      const vyLip = p.vx * p.gArc;
+      if (vyLip >= LIP_VY) { p.grounded = false; p.groundSolid = null; p.vy = Math.min(vyLip, LAUNCH_MAX); }
+      else p.vx *= p.kArc;
     }
+    p.arc = null; p.kArc = 1;
   }
   // Losa agrietada: rodando sobre ella se hunde y el jugador cae a la galería (andando la cruza sin caer)
   if (p.grounded && p.groundSolid && p.groundSolid.crack && p.rolling) {
@@ -429,12 +444,19 @@ function stepPlayer(dt) {
   // (el techo de la galería corta los saltos, así que un salto sobre la boca no deja al jugador en el vacío)
   if (p.vx > 0) {
     for (const pt of lv.paths) {
+      if (pt.fall) continue;                         // las cuevas secretas solo se entran cayendo (abajo)
       // Un salto sobre la boca de una subida también entra (el salto no llega a 3.2): no se queda al otro lado
       const onBase = p.grounded || (pt.kind === 'rise' && p.y - PH / 2 < pt.y0 + 3.2);
-      if (onBase && prevX < pt.x0 && p.x >= pt.x0 && (!pt.secret || p.rolling)) {
-        p.path = pt; p.s = 0; p.pv = p.vx;
-        p.x = pt.x0; p.y = pt.y0 + 0.5;
-        p.grounded = false; p.groundSolid = null; p.spinAir = true; p.jumping = false;
+      if (onBase && prevX < pt.x0 && p.x >= pt.x0 && (!pt.secret || p.rolling)) { enterTube(p, pt, p.vx); break; }
+    }
+  }
+  // Caída por una losa rota: al llegar a la pista por dentro de la boca de una cueva, entra en su tubo con la velocidad
+  // horizontal que trae (si va despacio, el tubo lo lleva igual: ningún valle queda más alto que la boca)
+  if (!p.grounded && !p.path && p.vy < 0) {
+    const bottom = p.y - PH / 2;
+    for (const pt of lv.paths) {
+      if (pt.fall && p.x >= pt.fall[0] && p.x <= pt.fall[1] && bottom <= pt.y0 + 0.5 && bottom > pt.y0 - 1) {
+        enterTube(p, pt, Math.max(p.vx, 4));
         break;
       }
     }
