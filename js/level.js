@@ -306,32 +306,36 @@ export function buildLevel(zi, ai) {
   };
 
   // Cueva secreta con tubo ondulado: una losa agrietada en la pista. Rodando se rompe y el jugador cae al tubo, que
-  // tiene cinco curvas, arriba y abajo, y vuelve a salir a la pista. Andando se cruza la losa sin caer.
-  // Desde la pista no se ve nada: la losa tapa la cueva. Cada curva es un coseno entre dos alturas (tangente horizontal
-  // en sus extremos). Ningún valle queda más alto que la boca, así que el tubo se recorre con cualquier velocidad
-  const SNAKE = [[10, 7], [9, 2.5], [10, 8], [9, 2], [9, 0.5]];   // [ancho, profundidad bajo la pista] de cada curva
+  // hace ocho curvas: cuatro valles de 7.5 a 9.5 bajo la pista, tres crestas a poca altura bajo ella y una última que
+  // sube a la pista. Sale a la velocidad con que entró, a la altura de la pista, así que cae sobre ella. Andando se
+  // cruza la losa sin caer. Cada curva es un coseno entre dos alturas (tangente horizontal en sus extremos). Todas las
+  // crestas quedan bajo la pista: el tubo se recorre con cualquier velocidad de entrada
   const snakeSec = () => {
-    const W = DROP_W, Xs = x + rnd(10, 14), Xe = Xs + SNAKE.reduce((a, c) => a + c[0], 0);
+    const W = DROP_W, Xs = x + rnd(10, 14);
+    const depth = [rnd(7.5, 9.5), rnd(0.6, 2.4), rnd(7.5, 9.5), rnd(0.6, 2.4), rnd(7.5, 9.5), rnd(0.6, 2.4), rnd(7.5, 9.5), 0];
+    const wide = depth.map(() => rnd(6, 8));
+    const Xe = Xs + wide.reduce((a, b) => a + b, 0);
     pushGround(x, Xs - 6, top);
     pushGround(Xs - 6, Xs, top, { boost: 1, noEnemy: true });   // franja de aceleración: la losa se rompe a buena velocidad
     S.push({ kind: 'ground', x0: Xs, x1: Xs + W, y0: -4, y1: top, crack: true, noEnemy: true });
     S.push({ kind: 'ground', x0: Xs + W, x1: Xe, y0: top - 4, y1: top, slab: true, thin: true, noEnemy: true });
-    const pts = [[Xs, top - 0.5]];
-    let cx = Xs, cy = top - 0.5;
-    for (const [w, d] of SNAKE) {
+    const pts = [[Xs, top]];
+    let cx = Xs, cy = top;
+    const xEnd = [];
+    depth.forEach((d, k) => {
       const ny = top - d;
-      for (let i = 1; i <= 24; i++) pts.push([cx + w * i / 24, cy + (ny - cy) * (1 - Math.cos(Math.PI * i / 24)) / 2]);
-      cx += w; cy = ny;
-    }
+      for (let i = 1; i <= 24; i++) pts.push([cx + wide[k] * i / 24, cy + (ny - cy) * (1 - Math.cos(Math.PI * i / 24)) / 2]);
+      cx += wide[k]; cy = ny; xEnd.push(cx);
+    });
     const pt = addPath(pts, 'snake');
     pt.fall = [Xs - 1, Xs + W + 1];                 // boca: por aquí entra quien cae por la losa rota
-    pathRings(pt, [0.12, 0.3, 0.48, 0.66, 0.84]);
-    const v1 = Xs + SNAKE[0][0], v2 = v1 + SNAKE[1][0] + SNAKE[2][0];   // los dos valles
-    itemAt(v1, top - 6, randItem());
-    itemAt(v2, top - 7, 'life');
-    lv.secrets.push({ kind: 'tube', x0: Xs, x1: Xe, y0: top - 9, y1: top, found: false });
-    lv.caves.push({ x0: Xs, x1: Xe, top, depth: 9.5 });
+    pathRings(pt, [0.08, 0.2, 0.33, 0.45, 0.58, 0.7, 0.83, 0.95]);
+    itemAt(xEnd[2], top - depth[2] + 1, randItem());   // potenciadores en el segundo y el cuarto valle
+    itemAt(xEnd[6], top - depth[6] + 1, 'life');
+    lv.secrets.push({ kind: 'tube', x0: Xs, x1: Xe, y0: top - 10.5, y1: top - 0.2, found: false });
+    lv.caves.push({ x0: Xs, x1: Xe, top, depth: 11 });
     x = Xe;
+    runSec(rnd(18, 24), true);                    // pista llana tras la salida: el jugador sale rápido y tiene sitio para reaccionar
   };
 
   // Cadena de tubos: una o dos cuevas seguidas, cada una con su losa agrietada
